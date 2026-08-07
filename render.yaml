@@ -3,7 +3,7 @@ services:
     name: bup-club-management
     env: node
     plan: free
-    buildCommand: npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
