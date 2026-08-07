@@ -17,6 +17,14 @@ import {
 
 dotenv.config();
 
+declare global {
+  namespace Express {
+    interface Request {
+      user?: any;
+    }
+  }
+}
+
 const projectRoot = process.cwd();
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
@@ -220,7 +228,7 @@ async function startServer() {
         return res.status(400).json({ error: 'Email and password are required.' });
       }
 
-      const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+      const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
       if (!row) {
         return res.status(401).json({ error: 'No account found for this email.' });
       }
@@ -253,7 +261,7 @@ async function startServer() {
   });
 
   app.get('/api/auth/me', requireAuth, (req, res) => {
-    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.sub);
+    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.sub) as any;
     if (!row) {
       return res.status(404).json({ error: 'User not found.' });
     }
