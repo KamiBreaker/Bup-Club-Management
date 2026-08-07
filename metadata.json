@@ -1,0 +1,6 @@
+{
+  "name": "BUP - Club & Society Management System",
+  "description": "Centralized Club & Society Management System for Bangladesh University of Professionals with SRE documentation hub, event management, venue booking, role-based workflows, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
