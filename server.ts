@@ -20,7 +20,9 @@ dotenv.config();
 const projectRoot = process.cwd();
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const DB_PATH = path.join(projectRoot, 'bup-cms.db');
+const DB_PATH = process.env.VERCEL
+  ? path.join('/tmp', 'bup-cms.db')
+  : path.join(projectRoot, 'bup-cms.db');
 
 const db = new Database(DB_PATH);
 db.exec(`
