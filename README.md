@@ -102,3 +102,5 @@ A modern, full-stack campus management platform built for **Bangladesh Universit
 ## 📄 License
 
 This project is licensed under the Apache 2.0 License.
+https://bup-club-management.onrender.com/ for online
+
