@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { UserProfile, UserRole } from '../../types/cms';
 import {
   Calendar,
@@ -7,8 +8,14 @@ import {
   Bell,
   ShieldCheck,
   LayoutDashboard,
-  LogOut
+  LogOut,
+  Search,
+  Sliders,
+  Sparkles,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
+import { soundFx } from '../../utils/audioFx';
 
 interface HeaderProps {
   activeCmsTab: 'clubs' | 'events' | 'venues' | 'notifications' | 'analytics';
@@ -19,6 +26,8 @@ interface HeaderProps {
   currentUser: UserProfile;
   unreadNotificationsCount: number;
   onLogout: () => void;
+  onOpenCommandPalette: () => void;
+  onOpenMotionSettings: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,87 +38,129 @@ export const Header: React.FC<HeaderProps> = ({
   userProfiles,
   currentUser,
   unreadNotificationsCount,
-  onLogout
+  onLogout,
+  onOpenCommandPalette,
+  onOpenMotionSettings
 }) => {
+  const tabs = [
+    { id: 'clubs' as const, label: 'Clubs & Societies', icon: Users },
+    { id: 'events' as const, label: 'Events & RSVPs', icon: Calendar },
+    { id: 'venues' as const, label: 'Venue Booking', icon: Building2 },
+    { id: 'notifications' as const, label: 'Notifications', icon: Bell, count: unreadNotificationsCount },
+    ...(selectedRole === 'Venue_Admin' ||
+    selectedRole === 'System_Admin' ||
+    selectedRole === 'Faculty_Advisor' ||
+    selectedRole === 'Club_Exec'
+      ? [{ id: 'analytics' as const, label: 'Admin Analytics', icon: LayoutDashboard }]
+      : [])
+  ];
+
   return (
-    <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 shadow-sm">
-      {/* Top Banner with BUP Branding */}
-      <div className="bg-[#004d38] px-4 py-1 text-xs text-emerald-100 flex flex-wrap justify-between items-center border-b border-emerald-800">
+    <header className="sticky top-0 z-40 w-full transition-all">
+      {/* Top Academic Status Ticker */}
+      <div className="bg-gradient-to-r from-[#003828] via-[#05261d] to-[#001f16] px-4 py-1 text-[11px] text-emerald-200 border-b border-emerald-500/20 backdrop-blur-md flex flex-wrap justify-between items-center">
         <div className="flex items-center gap-2 font-medium tracking-wide">
-          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span>Bangladesh University of Professionals (BUP)</span>
-          <span className="text-emerald-300">|</span>
-          <span className="text-emerald-200">Dept. of Information & Communication Engineering (ICE)</span>
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span className="font-semibold text-white">Bangladesh University of Professionals (BUP)</span>
+          <span className="text-emerald-500/50">|</span>
+          <span className="text-emerald-300/90 hidden md:inline">Dept. of Information & Communication Engineering (ICE)</span>
         </div>
-        <div className="flex items-center gap-3 font-mono text-[11px]">
-          <span>BUP Club & Society Management</span>
-          <span className="text-emerald-300">|</span>
-          <span className="bg-emerald-950 text-emerald-200 px-2 py-0.5 rounded border border-emerald-800">
-            System Active
+
+        <div className="flex items-center gap-3 font-mono text-[10px]">
+          <span className="hidden sm:inline text-emerald-300/80">Campus Grid System v2.5</span>
+          <span className="bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
+            Live Sync Active
           </span>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo & Main System Branding */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-transparent p-0">
+      {/* Main Glassmorphic Navigation Bar */}
+      <div className="glass-dock border-b border-white/10 px-4 sm:px-6 lg:px-8 py-2.5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          {/* Logo & Branding */}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveCmsTab('clubs')}>
+            <motion.div
+              whileHover={{ scale: 1.08, rotate: 3 }}
+              whileTap={{ scale: 0.95 }}
+              className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl p-1 bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/40 shadow-lg shadow-emerald-950/40"
+            >
               <img
                 src="/buplogo.webp"
                 alt="BUP logo"
-                className="h-full w-full object-contain object-center"
+                className="h-full w-full object-contain filter drop-shadow"
               />
-            </div>
+            </motion.div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-extrabold tracking-tight text-white font-sans">
-                  BUP-CMS
+                <h1 className="text-base font-black tracking-tight text-white font-heading">
+                  BUP<span className="text-emerald-400">-CMS</span>
                 </h1>
-                <span className="text-[10px] font-bold bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800">
-                  Official Portal
+                <span className="text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                  NEXT-GEN
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Club & Society Management System
+              <p className="text-[10px] text-slate-400 font-medium">
+                Club & Society Intelligence Portal
               </p>
             </div>
           </div>
 
-          {/* User Role Switcher */}
-          <div className="flex items-center gap-3">
-            {/* Role Switcher Dropdown */}
-            <div className="relative flex items-center bg-slate-800 px-2 py-1.5 rounded-xl border border-slate-700">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 mr-1.5" />
+          {/* Quick Search Trigger & Motion HUD */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                onOpenCommandPalette();
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-white/10 text-xs transition-all hover:border-emerald-500/40 shadow-sm group"
+            >
+              <Search className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span className="hidden md:inline text-[11px] text-slate-400">Search & Commands</span>
+              <kbd className="text-[10px] font-mono bg-slate-800 px-1.5 py-0.5 rounded border border-white/10 text-slate-400 group-hover:text-emerald-300">
+                ⌘K
+              </kbd>
+            </button>
+
+            {/* Motion Settings Tool */}
+            <button
+              onClick={() => {
+                soundFx.playClick();
+                onOpenMotionSettings();
+              }}
+              title="Motion & Physics Studio"
+              className="p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-white/10 hover:border-emerald-500/40 transition-all hover:text-emerald-300"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Role Switcher Pill */}
+            <div className="relative flex items-center bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-white/10 shadow-inner">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 mr-1.5 shrink-0" />
               <select
                 value={selectedRole}
-                onChange={(e) => onRoleChange(e.target.value as UserRole)}
+                onChange={(e) => {
+                  soundFx.playClick();
+                  onRoleChange(e.target.value as UserRole);
+                }}
                 className="bg-transparent text-xs text-white font-bold focus:outline-none cursor-pointer pr-1"
               >
-                <option value="Student" className="bg-slate-900 text-white">
-                  Role: Student
-                </option>
-                <option value="Club_Exec" className="bg-slate-900 text-white">
-                  Role: Club Executive
-                </option>
-                <option value="Faculty_Advisor" className="bg-slate-900 text-white">
-                  Role: Faculty Advisor
-                </option>
-                <option value="Venue_Admin" className="bg-slate-900 text-white">
-                  Role: Venue Admin
-                </option>
-                <option value="System_Admin" className="bg-slate-900 text-white">
-                  Role: System Admin
-                </option>
+                <option value="Student" className="bg-slate-950 text-white">Student</option>
+                <option value="Club_Exec" className="bg-slate-950 text-white">Club Exec</option>
+                <option value="Faculty_Advisor" className="bg-slate-950 text-white">Faculty Advisor</option>
+                <option value="Venue_Admin" className="bg-slate-950 text-white">Venue Admin</option>
+                <option value="System_Admin" className="bg-slate-950 text-white">System Admin</option>
               </select>
             </div>
 
-            {/* User Profile Avatar */}
-            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-800">
+            {/* User Profile & Logout */}
+            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-white/10">
               <img
                 src={currentUser.avatarUrl}
                 alt={currentUser.name}
-                className="w-8 h-8 rounded-xl object-cover border border-slate-700"
+                className="w-8 h-8 rounded-xl object-cover ring-2 ring-emerald-500/30 bg-slate-800"
               />
               <div className="hidden lg:block text-left">
                 <p className="text-xs font-bold text-white leading-tight">
@@ -121,90 +172,67 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <button
                 type="button"
-                onClick={onLogout}
-                className="ml-2 inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 transition hover:border-emerald-600 hover:text-emerald-300"
+                onClick={() => {
+                  soundFx.playClick();
+                  onLogout();
+                }}
+                title="Sign out"
+                className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 border border-white/10 hover:border-rose-500/30 transition-all"
               >
                 <LogOut className="h-3.5 w-3.5" />
-                Logout
               </button>
             </div>
           </div>
         </div>
 
-        {/* CMS Tab Bar */}
-        <div className="flex items-center justify-between border-t border-slate-800 py-2 overflow-x-auto">
-            <nav className="flex space-x-2 text-xs font-bold">
-              <button
-                onClick={() => setActiveCmsTab('clubs')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  activeCmsTab === 'clubs'
-                    ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                Club Directory
-              </button>
-              <button
-                onClick={() => setActiveCmsTab('events')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  activeCmsTab === 'events'
-                    ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Events & RSVPs
-              </button>
-              <button
-                onClick={() => setActiveCmsTab('venues')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  activeCmsTab === 'venues'
-                    ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Building2 className="w-3.5 h-3.5" />
-                Venue Booking
-              </button>
-              <button
-                onClick={() => setActiveCmsTab('notifications')}
-                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                  activeCmsTab === 'notifications'
-                    ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Bell className="w-3.5 h-3.5" />
-                Notifications
-                {unreadNotificationsCount > 0 && (
-                  <span className="ml-1 bg-emerald-500 text-slate-950 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
-                    {unreadNotificationsCount}
-                  </span>
-                )}
-              </button>
-              {(selectedRole === 'Venue_Admin' || selectedRole === 'System_Admin' || selectedRole === 'Faculty_Advisor' || selectedRole === 'Club_Exec') && (
+        {/* Tab Navigation Pill Bar with Framer Spring Physics */}
+        <div className="max-w-7xl mx-auto mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between overflow-x-auto pb-0.5">
+          <nav className="flex space-x-1 text-xs font-bold relative">
+            {tabs.map((tab) => {
+              const isActive = activeCmsTab === tab.id;
+              const Icon = tab.icon;
+
+              return (
                 <button
-                  onClick={() => setActiveCmsTab('analytics')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                    activeCmsTab === 'analytics'
-                      ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                      : 'text-slate-400 hover:text-white'
+                  key={tab.id}
+                  onClick={() => {
+                    soundFx.playClick(isActive ? 700 : 900);
+                    setActiveCmsTab(tab.id);
+                  }}
+                  className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl transition-colors duration-200 z-10 ${
+                    isActive ? 'text-emerald-300 font-extrabold' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  <LayoutDashboard className="w-3.5 h-3.5" />
-                  Admin & Analytics
+                  {isActive && (
+                    <motion.div
+                      layoutId="header-active-pill"
+                      className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-emerald-500/20 rounded-xl border border-emerald-500/40 shadow-md shadow-emerald-950/30 -z-10"
+                      transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                    />
+                  )}
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <motion.span
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      className="ml-1 bg-emerald-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-sm"
+                    >
+                      {tab.count}
+                    </motion.span>
+                  )}
                 </button>
-              )}
-            </nav>
+              );
+            })}
+          </nav>
 
-            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-300">
-              <span className="text-slate-400">Logged as:</span>
-              <span className="font-bold text-emerald-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-                {selectedRole.replace('_', ' ')}
-              </span>
-            </div>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 font-mono">
+            <span>Role:</span>
+            <span className="font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-500/30 text-[11px]">
+              {selectedRole.replace('_', ' ')}
+            </span>
           </div>
+        </div>
       </div>
     </header>
   );

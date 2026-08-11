@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import {
+  INITIAL_USER_PROFILES,
   BUP_CLUBS,
   BUP_EVENTS,
   BUP_VENUES,
@@ -66,7 +67,7 @@ type AppState = {
 
 function getInitialState(): AppState {
   return {
-    users: [],
+    users: INITIAL_USER_PROFILES.map((u) => ({ ...u })),
     clubs: BUP_CLUBS.map((club) => ({ ...club })),
     events: BUP_EVENTS.map((event) => ({ ...event })),
     venues: BUP_VENUES.map((venue) => ({ ...venue })),
@@ -76,23 +77,46 @@ function getInitialState(): AppState {
   };
 }
 
-function resetUserData() {
-  db.prepare('DELETE FROM users').run();
+async function seedInitialUsers() {
+  try {
+    const count = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0;
+    if (count === 0) {
+      const defaultHash = await bcrypt.hash('bup12345', 10);
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO users (id, name, student_id, department, batch, email, password_hash, role, avatar_url, club_memberships, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
 
-  const row = db.prepare('SELECT value FROM app_state WHERE key = ?').get('app-state') as { value: string } | undefined;
-  if (row) {
-    const state = JSON.parse(row.value) as AppState;
-    state.users = [];
-    saveAppState(state);
-  } else {
-    saveAppState(getInitialState());
+      for (const u of INITIAL_USER_PROFILES) {
+        insert.run(
+          u.id,
+          u.name,
+          u.studentId,
+          u.department,
+          u.batch,
+          u.email,
+          defaultHash,
+          u.role,
+          u.avatarUrl,
+          JSON.stringify(u.clubMemberships || []),
+          new Date().toISOString()
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('User seed warning:', e);
   }
 }
 
 function loadAppState(): AppState {
   const row = db.prepare('SELECT value FROM app_state WHERE key = ?').get('app-state') as { value: string } | undefined;
   if (row) {
-    return JSON.parse(row.value);
+    try {
+      const parsed = JSON.parse(row.value);
+      if (parsed && Array.isArray(parsed.clubs)) {
+        return parsed;
+      }
+    } catch {}
   }
 
   const initialState = getInitialState();
@@ -143,10 +167,11 @@ function buildUserProfile(userRow: any) {
 
 async function startServer() {
   const app = express();
-  resetUserData();
+  await seedInitialUsers();
   const state = loadAppState();
   if (!state.users?.length) {
-    saveAppState(getInitialState());
+    state.users = INITIAL_USER_PROFILES.map((u) => ({ ...u }));
+    saveAppState(state);
   }
 
   app.use(express.json({ limit: '10mb' }));
@@ -154,6 +179,27 @@ async function startServer() {
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', app: 'BUP-CMS', time: new Date().toISOString() });
+  });
+
+  // 1-Click Instant Demo Login
+  app.post('/api/auth/demo-login', (req, res) => {
+    try {
+      const { role = 'Student' } = req.body;
+      const targetUser = INITIAL_USER_PROFILES.find((u) => u.role === role) || INITIAL_USER_PROFILES[0];
+      
+      const token = createToken({ id: targetUser.id, email: targetUser.email, role: targetUser.role });
+      res.cookie('token', token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 1000 * 60 * 60 * 24 * 7
+      });
+
+      const stateSnapshot = loadAppState();
+      return res.json({ success: true, user: targetUser, state: stateSnapshot });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message || 'Demo login failed' });
+    }
   });
 
   app.post('/api/auth/register', async (req, res) => {
