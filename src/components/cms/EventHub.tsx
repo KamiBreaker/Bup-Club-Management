@@ -179,13 +179,13 @@ export const EventHub: React.FC<EventHubProps> = ({
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
               <Ticket className="w-3.5 h-3.5 text-amber-300" />
-              <span>Campus Calendar & Holographic Passes</span>
+              <span>Campus calendar and registrations</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-heading">
               BUP Event Operations Hub
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              Discover official workshops, competitions, cultural galas, and guest seminars. Claim your encrypted QR pass instantly.
+              Discover official workshops, competitions, cultural programmes, and guest seminars. Register for your place in one step.
             </p>
           </div>
 
@@ -219,7 +219,7 @@ export const EventHub: React.FC<EventHubProps> = ({
                   setActiveTab(tab);
                 }}
                 className={`relative px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                  isSelected ? 'text-emerald-950 font-black bg-emerald-400 shadow' : 'text-slate-400 hover:text-white'
+                  isSelected ? 'text-emerald-950 font-black bg-emerald-400 shadow' : 'text-emerald-800 hover:text-emerald-950'
                 }`}
               >
                 {tab === 'All' && `All Events (${(events ?? []).length})`}
@@ -282,7 +282,7 @@ export const EventHub: React.FC<EventHubProps> = ({
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0d1320] via-slate-950/30 to-transparent" />
 
-                  <span className="absolute top-3 left-3 bg-emerald-500 text-slate-950 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow">
+                  <span className="absolute top-3 left-3 bg-emerald-500 text-emerald-950 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow">
                     {evt.category}
                   </span>
 
@@ -370,7 +370,7 @@ export const EventHub: React.FC<EventHubProps> = ({
                       className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 text-xs font-black px-4 py-2 rounded-xl shadow-lg shadow-emerald-950/50"
                     >
                       <QrCode className="w-3.5 h-3.5" />
-                      <span>View Hologram Pass</span>
+                      <span>View event pass</span>
                     </motion.button>
                   </div>
                 ) : isFull ? (
@@ -385,7 +385,7 @@ export const EventHub: React.FC<EventHubProps> = ({
                     className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold py-2.5 rounded-xl shadow-lg shadow-emerald-950/40 transition-all flex items-center justify-center gap-2"
                   >
                     <Zap className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Claim Digital Seat Pass</span>
+                    <span>Register for this event</span>
                   </motion.button>
                 )}
               </div>

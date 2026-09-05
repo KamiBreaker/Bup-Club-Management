@@ -376,7 +376,7 @@ export default function App() {
   if (!currentUser || !authUser) {
     return (
       <ErrorBoundary fallbackTitle="Authentication Shield Active">
-        <div className="min-h-screen bg-[#060910] text-slate-100 flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
+        <div className="bup-auth min-h-screen text-slate-100 flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
           <InteractiveBackground density={motionSettings.particleDensity} speed={motionSettings.speed} />
           <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
@@ -384,20 +384,20 @@ export default function App() {
             initial={{ opacity: 0, y: 20, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-            className="w-full max-w-lg glass-panel-glow rounded-3xl p-6 sm:p-8 border border-emerald-500/30 relative z-10 shadow-2xl space-y-6"
+            className="w-full max-w-[640px] glass-panel-glow rounded-3xl p-7 sm:p-9 lg:p-10 border border-white/10 relative z-10 shadow-[0_24px_64px_rgba(0,0,0,0.45)] space-y-6"
           >
             {/* Header */}
             <div className="text-center space-y-2">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
                 <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>BUP University Management Grid</span>
+                <span>Bangladesh University of Professionals</span>
               </div>
               <div className="flex items-center justify-center gap-3 pt-1">
                 <div className="h-10 w-10 rounded-2xl p-1 bg-emerald-500/20 border border-emerald-500/40">
                   <img src="/buplogo.webp" alt="BUP logo" className="h-full w-full object-contain" />
                 </div>
                 <h1 className="text-2xl font-black text-white font-heading tracking-tight">
-                  BUP<span className="text-emerald-400">-CMS</span> Portal
+                  BUP Club & Society Portal
                 </h1>
               </div>
               <p className="text-xs text-slate-300">
@@ -409,9 +409,9 @@ export default function App() {
             <div className="p-4 rounded-2xl bg-slate-950/80 border border-white/10 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                  1-Click Instant Demo Access
+                  Explore a demonstration account
                 </span>
-                <span className="text-[10px] text-slate-400">No password required</span>
+                <span className="text-[10px] text-slate-400">For evaluation only</span>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -553,7 +553,7 @@ export default function App() {
                 {isSubmitting
                   ? 'Connecting...'
                   : authMode === 'login'
-                  ? 'Sign in to BUP-CMS'
+                  ? 'Sign in to the portal'
                   : 'Register Account'}
               </motion.button>
             </form>
@@ -578,7 +578,7 @@ export default function App() {
 
   return (
     <ErrorBoundary fallbackTitle="BUP-CMS Portal Protected">
-      <div className="min-h-screen bg-[#060910] text-slate-100 font-sans flex flex-col relative overflow-x-hidden">
+      <div className="bup-shell min-h-screen text-slate-100 font-sans flex flex-col relative overflow-x-hidden">
         <InteractiveBackground density={motionSettings.particleDensity} speed={motionSettings.speed} />
         <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
@@ -725,16 +725,15 @@ export default function App() {
           </div>
         </main>
 
-        {/* Cyber Footer */}
         <footer className="glass-dock text-slate-400 py-6 text-xs border-t border-white/10 relative z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
             <p className="text-slate-400">
               © 2026 Bangladesh University of Professionals (BUP) | Dept. of ICE
             </p>
             <div className="flex items-center gap-3 font-mono text-[11px]">
-              <span className="text-slate-500">Engineered with Anime.js & Motion.dev Physics</span>
+              <span className="text-slate-500">Club & Society Management System</span>
               <span className="text-emerald-400 font-bold bg-emerald-950/80 px-2.5 py-0.5 rounded-lg border border-emerald-500/30">
-                BUP-CMS v2.5
+                Official portal
               </span>
             </div>
           </div>

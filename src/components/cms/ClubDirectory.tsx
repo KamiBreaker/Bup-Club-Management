@@ -100,25 +100,24 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Dynamic Cyber Banner */}
       <div className="relative overflow-hidden rounded-3xl glass-panel-glow p-6 sm:p-8 border border-emerald-500/30">
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Official Student Co-Curricular Roster</span>
+                <span>Student Affairs Division</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-heading">
               BUP Clubs & Societies
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              Explore officially accredited student chapters, academic societies, and executive committees across all BUP faculties.
+              Find accredited student chapters, academic societies, and their executive committees across BUP faculties.
             </p>
           </div>
 
           <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto p-4 rounded-2xl bg-slate-900/80 border border-white/10 shrink-0">
-            <span className="text-[11px] text-slate-400 font-medium">Registered Societies</span>
+            <span className="text-[11px] text-slate-400 font-medium">Accredited societies</span>
             <span className="text-2xl font-black text-emerald-400 font-mono">
               {(clubs ?? []).length} Active
             </span>
@@ -253,7 +252,7 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                       soundFx.playClick();
                       onLeaveClub(club.id);
                     }}
-                    className="flex items-center gap-1.5 bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 text-slate-300 text-[11px] font-bold px-3 py-1.5 rounded-xl border border-white/10 hover:border-rose-500/40 transition-all"
+                    className="flex items-center gap-1.5 bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 text-rose-700 text-[11px] font-bold px-3 py-1.5 rounded-xl border border-white/10 hover:border-rose-500/40 transition-all"
                   >
                     <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Member (Leave)</span>

@@ -57,22 +57,21 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-40 w-full transition-all">
-      {/* Top Academic Status Ticker */}
-      <div className="bg-gradient-to-r from-[#003828] via-[#05261d] to-[#001f16] px-4 py-1 text-[11px] text-emerald-200 border-b border-emerald-500/20 backdrop-blur-md flex flex-wrap justify-between items-center">
+      <div className="bg-[#073629] px-4 py-1.5 text-[11px] text-emerald-200 border-b border-emerald-500/20 flex flex-wrap justify-between items-center">
         <div className="flex items-center gap-2 font-medium tracking-wide">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
-          <span className="font-semibold text-white">Bangladesh University of Professionals (BUP)</span>
+          <span className="font-semibold text-white">Bangladesh University of Professionals</span>
           <span className="text-emerald-500/50">|</span>
           <span className="text-emerald-300/90 hidden md:inline">Dept. of Information & Communication Engineering (ICE)</span>
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[10px]">
-          <span className="hidden sm:inline text-emerald-300/80">Campus Grid System v2.5</span>
+          <span className="hidden sm:inline text-emerald-300/80">Student Affairs Division</span>
           <span className="bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold">
-            Live Sync Active
+            Portal active
           </span>
         </div>
       </div>
@@ -96,14 +95,14 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-black tracking-tight text-white font-heading">
-                  BUP<span className="text-emerald-400">-CMS</span>
+                  BUP Clubs & Societies
                 </h1>
                 <span className="text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-500/30">
-                  NEXT-GEN
+                  OFFICIAL
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-medium">
-                Club & Society Intelligence Portal
+                Student Affairs Management Portal
               </p>
             </div>
           </div>
@@ -118,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-white/10 text-xs transition-all hover:border-emerald-500/40 shadow-sm group"
             >
               <Search className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
-              <span className="hidden md:inline text-[11px] text-slate-400">Search & Commands</span>
+                <span className="hidden md:inline text-[11px] text-slate-400">Search the portal</span>
               <kbd className="text-[10px] font-mono bg-slate-800 px-1.5 py-0.5 rounded border border-white/10 text-slate-400 group-hover:text-emerald-300">
                 ⌘K
               </kbd>
@@ -130,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({
                 soundFx.playClick();
                 onOpenMotionSettings();
               }}
-              title="Motion & Physics Studio"
+                title="Display settings"
               className="p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-white/10 hover:border-emerald-500/40 transition-all hover:text-emerald-300"
             >
               <Sliders className="w-3.5 h-3.5" />
@@ -177,7 +176,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onLogout();
                 }}
                 title="Sign out"
-                className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 border border-white/10 hover:border-rose-500/30 transition-all"
+                className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/40 text-rose-700 hover:text-rose-800 border border-white/10 hover:border-rose-500/30 transition-all"
               >
                 <LogOut className="h-3.5 w-3.5" />
               </button>
@@ -216,7 +215,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <motion.span
                       initial={{ scale: 0.8 }}
                       animate={{ scale: 1 }}
-                      className="ml-1 bg-emerald-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-sm"
+                      className="ml-1 bg-emerald-500 text-emerald-950 text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-sm"
                     >
                       {tab.count}
                     </motion.span>
