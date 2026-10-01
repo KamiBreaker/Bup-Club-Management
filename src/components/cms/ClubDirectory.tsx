@@ -24,7 +24,13 @@ import {
   AlertCircle,
   CheckCircle2,
   Send,
-  ShieldCheck
+  ShieldCheck,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  Building2,
+  DollarSign,
+  Layers
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -45,6 +51,8 @@ interface ClubDirectoryProps {
   ) => void;
   onJoinClub?: (clubId: string) => void;
   onLeaveClub: (clubId: string) => void;
+  onCreateClub?: (clubData: Partial<Club>) => void;
+  onDeleteClub?: (clubId: string) => void;
 }
 
 export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
@@ -54,13 +62,40 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
   applications = [],
   onApplyForMembership,
   onJoinClub,
-  onLeaveClub
+  onLeaveClub,
+  onCreateClub,
+  onDeleteClub
 }) => {
+  const isSystemAdmin = selectedRole === 'System_Admin' || currentUser?.role === 'System_Admin';
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [activeClubModal, setActiveClubModal] = useState<Club | null>(null);
   const [applyingClub, setApplyingClub] = useState<Club | null>(null);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+
+  // System Admin Society Management State
+  const [isCreateClubModalOpen, setIsCreateClubModalOpen] = useState(false);
+  const [clubToDelete, setClubToDelete] = useState<Club | null>(null);
+
+  // New Society Creation Form State
+  const [newClubName, setNewClubName] = useState('');
+  const [newClubCode, setNewClubCode] = useState('');
+  const [newClubCategory, setNewClubCategory] = useState<'Cultural' | 'Technical' | 'Business' | 'Sports' | 'Academic' | 'Social Work'>('Technical');
+  const [newClubDept, setNewClubDept] = useState('Faculty of Science and Technology');
+  const [newClubYear, setNewClubYear] = useState(new Date().getFullYear());
+  const [newClubTagline, setNewClubTagline] = useState('');
+  const [newClubDescription, setNewClubDescription] = useState('');
+  const [newClubAdvisorName, setNewClubAdvisorName] = useState('');
+  const [newClubAdvisorDesignation, setNewClubAdvisorDesignation] = useState('');
+  const [newClubAdvisorEmail, setNewClubAdvisorEmail] = useState('');
+  const [newClubBudget, setNewClubBudget] = useState(50000);
+  const [newClubLogoUrl, setNewClubLogoUrl] = useState('');
+  const [newClubBannerUrl, setNewClubBannerUrl] = useState('');
+  const [newClubObjectives, setNewClubObjectives] = useState('Host technical workshops, Organize campus competitions, Student research & mentorship');
+  const [newClubRecruitmentOpen, setNewClubRecruitmentOpen] = useState(true);
+  const [newClubDeadline, setNewClubDeadline] = useState('2026-10-31');
+  const [isSubmittingClub, setIsSubmittingClub] = useState(false);
 
   // Application Form State
   const [applicationType, setApplicationType] = useState<'Member' | 'Executive'>('Member');
@@ -149,6 +184,77 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
     setTimeout(() => setCopiedEmail(null), 2000);
   };
 
+  const handleCreateClubSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClubName.trim() || !newClubCode.trim()) {
+      alert('Please provide both Society Name and Society Code.');
+      return;
+    }
+
+    if (!onCreateClub) return;
+
+    setIsSubmittingClub(true);
+    soundFx.playSuccess();
+    try {
+      confetti({
+        particleCount: 90,
+        spread: 75,
+        origin: { y: 0.6 },
+        colors: ['#10b981', '#06b6d4', '#38bdf8', '#fbbf24']
+      });
+    } catch {}
+
+    const cleanCode = newClubCode.trim().toUpperCase();
+    const cleanObjectives = newClubObjectives
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    onCreateClub({
+      code: cleanCode,
+      name: newClubName.trim(),
+      category: newClubCategory,
+      department: newClubDept.trim() || 'Faculty of Science and Technology',
+      foundingYear: Number(newClubYear) || new Date().getFullYear(),
+      tagline: newClubTagline.trim() || `${newClubName.trim()} at BUP`,
+      description: newClubDescription.trim() || `${newClubName.trim()} provides students with opportunities for leadership, skills enrichment, and campus community engagement.`,
+      facultyAdvisor: {
+        name: newClubAdvisorName.trim() || 'Designated Faculty Advisor',
+        designation: newClubAdvisorDesignation.trim() || `Faculty Advisor, ${newClubDept.trim()}`,
+        email: newClubAdvisorEmail.trim() || `advisor.${cleanCode.toLowerCase()}@bup.edu.bd`
+      },
+      budgetAllocated: Number(newClubBudget) || 50000,
+      logoUrl: newClubLogoUrl.trim() || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(cleanCode)}`,
+      bannerUrl: newClubBannerUrl.trim() || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80',
+      recruitmentOpen: newClubRecruitmentOpen,
+      recruitmentDeadline: newClubDeadline || undefined,
+      objectives: cleanObjectives.length > 0 ? cleanObjectives : ['Host workshops', 'Organize competitions', 'Skill building'],
+      membershipRequirements: ['Enrolled BUP Student', 'Commitment to club activities'],
+      achievements: ['Chartered by BUP Student Affairs']
+    });
+
+    setIsSubmittingClub(false);
+    setIsCreateClubModalOpen(false);
+
+    // Reset Form
+    setNewClubName('');
+    setNewClubCode('');
+    setNewClubTagline('');
+    setNewClubDescription('');
+    setNewClubAdvisorName('');
+    setNewClubAdvisorDesignation('');
+    setNewClubAdvisorEmail('');
+    setNewClubLogoUrl('');
+    setNewClubBannerUrl('');
+  };
+
+  const handleConfirmDeleteClub = () => {
+    if (!clubToDelete || !onDeleteClub) return;
+    soundFx.playSuccess();
+    onDeleteClub(clubToDelete.id);
+    setClubToDelete(null);
+  };
+
   const containerVariants = {
     hidden: { opacity: 0 },
     show: {
@@ -183,11 +289,28 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
             </p>
           </div>
 
-          <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto p-4 rounded-2xl bg-slate-900/80 border border-white/10 shrink-0">
-            <span className="text-[11px] text-slate-400 font-medium">Accredited Societies</span>
-            <span className="text-2xl font-black text-emerald-400 font-mono">
-              {(clubs ?? []).length} Active
-            </span>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0 w-full sm:w-auto">
+            <div className="flex sm:flex-col items-center sm:items-end justify-between p-4 rounded-2xl bg-slate-900/80 border border-white/10 shrink-0">
+              <span className="text-[11px] text-slate-400 font-medium">Accredited Societies</span>
+              <span className="text-2xl font-black text-emerald-400 font-mono">
+                {(clubs ?? []).length} Active
+              </span>
+            </div>
+
+            {isSystemAdmin && onCreateClub && (
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => {
+                  soundFx.playClick();
+                  setIsCreateClubModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 text-slate-950 font-black text-xs px-5 py-4 rounded-2xl shadow-xl shadow-emerald-950/40 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>Charter New Society</span>
+              </motion.button>
+            )}
           </div>
         </div>
       </div>
@@ -256,9 +379,25 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#0d1320] via-transparent to-transparent" />
 
-                  <span className="absolute top-3 right-3 bg-slate-950/85 text-emerald-300 text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
-                    {club.code}
-                  </span>
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+                    <span className="bg-slate-950/85 text-emerald-300 text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
+                      {club.code}
+                    </span>
+                    {isSystemAdmin && onDeleteClub && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          soundFx.playClick();
+                          setClubToDelete(club);
+                        }}
+                        className="p-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-500/40 transition-all cursor-pointer shadow-md"
+                        title={`Dissolve Society: ${club.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
 
                   {club.recruitmentDeadline && (
                     <span className="absolute bottom-2 right-3 text-[9px] font-mono font-bold bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
@@ -745,8 +884,23 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                   </div>
                 </div>
 
-                {/* Apply Button in Modal */}
-                <div className="pt-4 border-t border-white/10 flex justify-end">
+                {/* Modal Action Footer */}
+                <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  {isSystemAdmin && onDeleteClub ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = activeClubModal;
+                        setActiveClubModal(null);
+                        setClubToDelete(target);
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-500/40 text-xs font-bold transition-all cursor-pointer shadow-md"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Dissolve Society (Admin)</span>
+                    </button>
+                  ) : <div />}
+
                   {getMembershipStatus(activeClubModal.id) === 'Active' ? (
                     <span className="text-emerald-400 font-bold flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4" />
@@ -784,6 +938,333 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SYSTEM ADMIN: CHARTER NEW SOCIETY MODAL */}
+      <AnimatePresence>
+        {isCreateClubModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsCreateClubModalOpen(false)}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="glass-panel-glow rounded-3xl max-w-2xl w-full p-6 sm:p-8 border border-emerald-500/40 shadow-2xl relative z-10 max-h-[90vh] overflow-y-auto space-y-5 bg-[#0a101b]"
+            >
+              <div className="flex justify-between items-start border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-emerald-400 text-[10px] font-mono font-bold uppercase tracking-wider">
+                      University Governance • Student Affairs
+                    </span>
+                    <h3 className="text-xl font-extrabold text-white mt-0.5 font-heading">
+                      Charter New Club or Society
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsCreateClubModalOpen(false)}
+                  className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateClubSubmit} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-slate-300 block mb-1">
+                      Society Full Name <span className="text-emerald-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. BUP Cyber Security & Ethical Hacking Society"
+                      value={newClubName}
+                      onChange={(e) => setNewClubName(e.target.value)}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">
+                      Unique Code <span className="text-emerald-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. BUPCSS"
+                      value={newClubCode}
+                      onChange={(e) => setNewClubCode(e.target.value.toUpperCase())}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs font-mono uppercase font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Category</label>
+                    <select
+                      value={newClubCategory}
+                      onChange={(e) => setNewClubCategory(e.target.value as any)}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs font-semibold bg-slate-950"
+                    >
+                      <option value="Technical">Technical</option>
+                      <option value="Cultural">Cultural</option>
+                      <option value="Business">Business</option>
+                      <option value="Sports">Sports</option>
+                      <option value="Academic">Academic</option>
+                      <option value="Social Work">Social Work</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Department / Faculty</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Faculty of Science & Tech"
+                      value={newClubDept}
+                      onChange={(e) => setNewClubDept(e.target.value)}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Founding Year</label>
+                    <input
+                      type="number"
+                      value={newClubYear}
+                      onChange={(e) => setNewClubYear(Number(e.target.value))}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Society Motto / Tagline</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Defending cyberspace through knowledge and ethics"
+                    value={newClubTagline}
+                    onChange={(e) => setNewClubTagline(e.target.value)}
+                    className="w-full p-2.5 rounded-xl glass-input text-xs italic"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Mission & Description</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Describe the society's mission, planned events, and student opportunities..."
+                    value={newClubDescription}
+                    onChange={(e) => setNewClubDescription(e.target.value)}
+                    className="w-full p-2.5 rounded-xl glass-input text-xs leading-relaxed"
+                  />
+                </div>
+
+                {/* Faculty Advisor Section */}
+                <div className="p-4 rounded-2xl bg-slate-900/70 border border-white/10 space-y-3">
+                  <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px] uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Faculty Advisor Appointment</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-0.5">Advisor Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Dr. Mohammad Ali"
+                        value={newClubAdvisorName}
+                        onChange={(e) => setNewClubAdvisorName(e.target.value)}
+                        className="w-full p-2 rounded-xl glass-input text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-0.5">Academic Designation</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Associate Professor, CSE"
+                        value={newClubAdvisorDesignation}
+                        onChange={(e) => setNewClubAdvisorDesignation(e.target.value)}
+                        className="w-full p-2 rounded-xl glass-input text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-0.5">Advisor Email</label>
+                      <input
+                        type="email"
+                        placeholder="e.g. advisor@bup.edu.bd"
+                        value={newClubAdvisorEmail}
+                        onChange={(e) => setNewClubAdvisorEmail(e.target.value)}
+                        className="w-full p-2 rounded-xl glass-input text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Budget & Recruitment */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Allocated Budget (BDT)</label>
+                    <input
+                      type="number"
+                      value={newClubBudget}
+                      onChange={(e) => setNewClubBudget(Number(e.target.value))}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs font-mono text-emerald-400 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Recruitment Status</label>
+                    <select
+                      value={newClubRecruitmentOpen ? 'open' : 'closed'}
+                      onChange={(e) => setNewClubRecruitmentOpen(e.target.value === 'open')}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs bg-slate-950 font-semibold"
+                    >
+                      <option value="open">Recruitment Open</option>
+                      <option value="closed">Recruitment Closed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Recruitment Deadline</label>
+                    <input
+                      type="date"
+                      value={newClubDeadline}
+                      onChange={(e) => setNewClubDeadline(e.target.value)}
+                      className="w-full p-2.5 rounded-xl glass-input text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Core Objectives (Comma-separated)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. National Hackathons, Technical Certifications, Alumni Mentorship"
+                    value={newClubObjectives}
+                    onChange={(e) => setNewClubObjectives(e.target.value)}
+                    className="w-full p-2.5 rounded-xl glass-input text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Logo URL (Optional)</label>
+                    <input
+                      type="url"
+                      placeholder="Leave blank for auto-generated avatar"
+                      value={newClubLogoUrl}
+                      onChange={(e) => setNewClubLogoUrl(e.target.value)}
+                      className="w-full p-2 rounded-xl glass-input text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Banner Image URL (Optional)</label>
+                    <input
+                      type="url"
+                      placeholder="Leave blank for campus stock banner"
+                      value={newClubBannerUrl}
+                      onChange={(e) => setNewClubBannerUrl(e.target.value)}
+                      className="w-full p-2 rounded-xl glass-input text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateClubModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingClub}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-xs shadow-xl shadow-emerald-950/40 hover:from-emerald-300 hover:to-teal-300 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Building2 className="w-4 h-4" />
+                    <span>{isSubmittingClub ? 'Chartering...' : 'Charter Society'}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SYSTEM ADMIN: PERMANENT SOCIETY DELETION CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {clubToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setClubToDelete(null)}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="glass-panel rounded-3xl max-w-md w-full p-6 sm:p-7 border border-rose-500/40 shadow-2xl relative z-10 space-y-5 bg-[#10070a]"
+            >
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-rose-400 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    High-Impact Administrative Action
+                  </span>
+                  <h3 className="text-lg font-black text-white mt-0.5 font-heading">
+                    Dissolve & Delete Society?
+                  </h3>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900/80 border border-rose-500/20 space-y-2 text-xs">
+                <p className="text-slate-200">
+                  You are about to decommission <strong className="text-rose-300 font-bold">{clubToDelete.name}</strong> ({clubToDelete.code}).
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-400 text-[11px] pt-1">
+                  <li>Permanently removes society from official directory</li>
+                  <li>Cancels and purges all {clubToDelete.featuredEventsCount} affiliated events</li>
+                  <li>Dissolves memberships for all {clubToDelete.memberCount} enrolled students</li>
+                  <li>Revokes all pending applications and venue bookings</li>
+                </ul>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setClubToDelete(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteClub}
+                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-xl shadow-rose-950/60 transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Decommission & Delete</span>
+                </button>
               </div>
             </motion.div>
           </div>

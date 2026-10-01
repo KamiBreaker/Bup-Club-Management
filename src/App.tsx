@@ -430,6 +430,33 @@ export default function App() {
     }
   };
 
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      await persistState('delete-event', { eventId });
+      addToast('Event removed from campus calendar.', 'info');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to delete event.', 'error');
+    }
+  };
+
+  const handleCreateClub = async (newClubData: Partial<Club>) => {
+    try {
+      await persistState('create-club', newClubData);
+      addToast(`Society "${newClubData.name}" chartered successfully!`, 'success');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to charter society.', 'error');
+    }
+  };
+
+  const handleDeleteClub = async (clubId: string) => {
+    try {
+      await persistState('delete-club', { clubId });
+      addToast('Society and associated records permanently removed.', 'info');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to delete society.', 'error');
+    }
+  };
+
   const handleNewBooking = async (newBookingData: Partial<VenueBooking>) => {
     try {
       await persistState('new-booking', newBookingData);
@@ -737,6 +764,8 @@ export default function App() {
                       onApplyForMembership={handleApplyForMembership}
                       onJoinClub={handleJoinClub}
                       onLeaveClub={handleLeaveClub}
+                      onCreateClub={handleCreateClub}
+                      onDeleteClub={handleDeleteClub}
                     />
                   </ErrorBoundary>
                 </motion.div>
@@ -762,6 +791,7 @@ export default function App() {
                       onRSVP={handleRSVP}
                       onCreateEvent={handleCreateEvent}
                       onRecordAttendance={handleRecordAttendance}
+                      onDeleteEvent={handleDeleteEvent}
                     />
                   </ErrorBoundary>
                 </motion.div>

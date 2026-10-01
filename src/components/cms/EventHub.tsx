@@ -22,7 +22,9 @@ import {
   FileSpreadsheet,
   Search,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -37,6 +39,7 @@ interface EventHubProps {
   onRSVP: (eventId: string) => void;
   onCreateEvent: (newEvent: Partial<ClubEvent>) => void;
   onRecordAttendance?: (eventId: string, studentId?: string, passCode?: string) => void;
+  onDeleteEvent?: (eventId: string) => void;
 }
 
 export const EventHub: React.FC<EventHubProps> = ({
@@ -49,7 +52,8 @@ export const EventHub: React.FC<EventHubProps> = ({
   attendance = [],
   onRSVP,
   onCreateEvent,
-  onRecordAttendance
+  onRecordAttendance,
+  onDeleteEvent
 }) => {
   const [activeTab, setActiveTab] = useState<'All' | 'Upcoming' | 'Registered'>('All');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -57,6 +61,7 @@ export const EventHub: React.FC<EventHubProps> = ({
   const [activeRosterModal, setActiveRosterModal] = useState<ClubEvent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDownloadingQr, setIsDownloadingQr] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<ClubEvent | null>(null);
 
   // Live Usher Check-in input
   const [checkInInput, setCheckInInput] = useState('');
@@ -125,6 +130,16 @@ export const EventHub: React.FC<EventHubProps> = ({
       onRecordAttendance(eventId, studentIdOrPass.trim(), undefined);
     }
     setCheckInInput('');
+  };
+
+  const handleConfirmDeleteEvent = () => {
+    if (!eventToDelete || !onDeleteEvent) return;
+    soundFx.playSuccess();
+    onDeleteEvent(eventToDelete.id);
+    setEventToDelete(null);
+    if (activeRosterModal?.id === eventToDelete.id) {
+      setActiveRosterModal(null);
+    }
   };
 
   const handleDownloadQrTicket = async (passCode: string, title: string, qrUrl: string) => {
@@ -358,11 +373,38 @@ export const EventHub: React.FC<EventHubProps> = ({
                     {evt.category}
                   </span>
 
-                  {evt.registrationDeadline && (
-                    <span className="absolute top-3 right-3 text-[10px] font-mono font-bold bg-slate-950/85 text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
-                      Deadline: {evt.registrationDeadline}
-                    </span>
-                  )}
+                  {(() => {
+                    const isSystemAdmin = selectedRole === 'System_Admin' || currentUser?.role === 'System_Admin';
+                    const canDeleteThisEvent = isSystemAdmin || (
+                      selectedRole === 'Club_Exec' &&
+                      Array.isArray(currentUser?.clubMemberships) &&
+                      currentUser.clubMemberships.some((m) => m.clubId === evt.clubId && m.status === 'Active')
+                    );
+
+                    return (
+                      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+                        {evt.registrationDeadline && (
+                          <span className="text-[10px] font-mono font-bold bg-slate-950/85 text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
+                            Deadline: {evt.registrationDeadline}
+                          </span>
+                        )}
+                        {canDeleteThisEvent && onDeleteEvent && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              soundFx.playClick();
+                              setEventToDelete(evt);
+                            }}
+                            className="p-1.5 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-500/40 transition-all cursor-pointer shadow-md"
+                            title={`Delete Event "${evt.title}"`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -542,12 +584,28 @@ export const EventHub: React.FC<EventHubProps> = ({
                     {activeRosterModal.venueName} • {activeRosterModal.date} ({activeRosterModal.startTime} - {activeRosterModal.endTime})
                   </p>
                 </div>
-                <button
-                  onClick={() => setActiveRosterModal(null)}
-                  className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {onDeleteEvent && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = activeRosterModal;
+                        setActiveRosterModal(null);
+                        setEventToDelete(target);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white border border-rose-500/40 text-xs font-bold transition-all cursor-pointer shadow"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Event</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setActiveRosterModal(null)}
+                    className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Attendance Quick Stats */}
@@ -967,6 +1025,72 @@ export const EventHub: React.FC<EventHubProps> = ({
                   Publish Campus Event
                 </button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* EVENT DELETION CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {eventToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEventToDelete(null)}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="glass-panel rounded-3xl max-w-md w-full p-6 sm:p-7 border border-rose-500/40 shadow-2xl relative z-10 space-y-5 bg-[#10070a]"
+            >
+              <div className="flex items-start gap-4">
+                <div className="p-3 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-rose-400 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    Administrative Event Action
+                  </span>
+                  <h3 className="text-lg font-black text-white mt-0.5 font-heading">
+                    Permanently Delete Event?
+                  </h3>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900/80 border border-rose-500/20 space-y-2 text-xs">
+                <p className="text-slate-200">
+                  You are about to cancel and delete <strong className="text-rose-300 font-bold">{eventToDelete.title}</strong> hosted by {eventToDelete.clubName}.
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-400 text-[11px] pt-1">
+                  <li>Permanently removes the event from the campus calendar</li>
+                  <li>Cancels all {eventToDelete.registeredCount || 0} user registrations & issued digital passes</li>
+                  <li>Releases the booked venue reservation and purges gate check-in logs</li>
+                </ul>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEventToDelete(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteEvent}
+                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-xl shadow-rose-950/60 transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Event</span>
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

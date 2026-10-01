@@ -1540,9 +1540,24 @@ async function startServer() {
           });
         }
 
-        // --- 6. CREATE EVENT ---
+        // --- 6. CREATE EVENT (System Admin & Club Executives) ---
         case 'create-event': {
           const newEventData = payload || {};
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const memberships = Array.isArray(currentUser.clubMemberships) ? currentUser.clubMemberships : [];
+          const isClubExec = memberships.some((m: any) => m.clubId === newEventData.clubId && m.status === 'Active');
+          const isAdvisor = currentUser.role === 'Faculty_Advisor';
+
+          if (!isSystemAdmin && !isClubExec && !isAdvisor) {
+            return res.status(403).json({
+              error: 'Access Denied: Only System Administrators or designated Club Executives can publish events.'
+            });
+          }
+
+          const targetClub = db.prepare('SELECT * FROM clubs WHERE id = ?').get(newEventData.clubId) as any;
+          const clubName = targetClub?.name || newEventData.clubName || 'BUP Society';
+          const clubLogo = targetClub?.logo_url || newEventData.clubLogo || '';
+
           const eventId = `EVT-${Date.now().toString().slice(-6)}`;
           const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
@@ -1552,9 +1567,9 @@ async function startServer() {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'Upcoming', 1, ?, '[]', ?, ?, ?, ?)
           `).run(
             eventId,
-            newEventData.clubId || 'CLUB-01',
-            newEventData.clubName || 'BUP Society',
-            newEventData.clubLogo || '',
+            newEventData.clubId || (targetClub ? targetClub.id : 'CLUB-01'),
+            clubName,
+            clubLogo,
             newEventData.title || 'Untitled Event',
             newEventData.category || 'Workshop',
             newEventData.description || 'Campus Event',
@@ -1568,12 +1583,14 @@ async function startServer() {
             JSON.stringify([currentUserId]),
             newEventData.registrationDeadline || newEventData.date || '2026-08-24',
             newEventData.contactPerson || currentUser.name,
-            newEventData.organizingTeam || `${newEventData.clubName || 'Club'} Executive Team`,
+            newEventData.organizingTeam || `${clubName} Executive Team`,
             JSON.stringify(newEventData.requiredEquipment || ['Projector', 'PA System'])
           );
 
           // Update featured events count for club
-          db.prepare('UPDATE clubs SET featured_events_count = featured_events_count + 1 WHERE id = ?').run(newEventData.clubId);
+          if (newEventData.clubId) {
+            db.prepare('UPDATE clubs SET featured_events_count = featured_events_count + 1 WHERE id = ?').run(newEventData.clubId);
+          }
 
           // Broadcast notification to students
           db.prepare(`
@@ -1582,13 +1599,69 @@ async function startServer() {
           `).run(
             `NT-${Date.now()}`,
             `New Event: ${newEventData.title}`,
-            `${newEventData.clubName || 'A club'} published a new event "${newEventData.title}". RSVPs are now open!`,
+            `${clubName} published a new event "${newEventData.title}". RSVPs are now open!`,
             JSON.stringify(['Student']),
             nowStr
           );
 
           const stateSnapshot = loadNormalizedAppState();
           return res.json({ success: true, message: 'New event published on campus calendar.', state: stateSnapshot });
+        }
+
+        // --- 6b. DELETE EVENT (System Admin & Club Executives) ---
+        case 'delete-event': {
+          const { eventId } = payload || {};
+          if (!eventId) {
+            return res.status(400).json({ error: 'Event ID is required to remove an event.' });
+          }
+
+          const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId) as any;
+          if (!event) {
+            return res.status(404).json({ error: 'Event not found.' });
+          }
+
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const memberships = Array.isArray(currentUser.clubMemberships) ? currentUser.clubMemberships : [];
+          const isClubExec = memberships.some((m: any) => m.clubId === event.club_id && m.status === 'Active');
+          const isAdvisor = currentUser.role === 'Faculty_Advisor';
+
+          if (!isSystemAdmin && !isClubExec && !isAdvisor) {
+            return res.status(403).json({
+              error: 'Access Denied: Only System Administrators or authorized club executives can delete events.'
+            });
+          }
+
+          // Cascade delete registrations, attendance, and venue bookings for this event
+          db.prepare('DELETE FROM event_registrations WHERE event_id = ?').run(eventId);
+          db.prepare('DELETE FROM attendance WHERE event_id = ?').run(eventId);
+          db.prepare('DELETE FROM venue_bookings WHERE event_id = ?').run(eventId);
+
+          // Delete event record
+          db.prepare('DELETE FROM events WHERE id = ?').run(eventId);
+
+          // Decrement featured_events_count in clubs table
+          db.prepare(`
+            UPDATE clubs 
+            SET featured_events_count = CASE WHEN featured_events_count > 0 THEN featured_events_count - 1 ELSE 0 END 
+            WHERE id = ?
+          `).run(event.club_id);
+
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          // Broadcast cancellation notification
+          db.prepare(`
+            INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+            VALUES (?, ?, ?, 'Event', ?, ?)
+          `).run(
+            `NT-${Date.now()}`,
+            `Event Cancelled: ${event.title}`,
+            `The event "${event.title}" hosted by ${event.club_name} has been cancelled and removed from the campus calendar by ${currentUser.name}.`,
+            JSON.stringify(['Student', 'Club_Exec', 'Faculty_Advisor']),
+            nowStr
+          );
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: `Event "${event.title}" removed successfully.`, state: stateSnapshot });
         }
 
         // --- 7. NEW VENUE & RESOURCE BOOKING ---
@@ -1714,6 +1787,156 @@ async function startServer() {
           db.prepare('UPDATE notifications SET read = 1').run();
           const stateSnapshot = loadNormalizedAppState();
           return res.json({ success: true, state: stateSnapshot });
+        }
+
+        // --- 11. CREATE CLUB (System Admin Privilege) ---
+        case 'create-club': {
+          if (currentUser.role !== 'System_Admin') {
+            return res.status(403).json({ error: 'Access Denied: Only System Administrators can charter new clubs & societies.' });
+          }
+
+          const {
+            code,
+            name,
+            category = 'Academic',
+            department = 'BUP General',
+            foundingYear = new Date().getFullYear(),
+            logoUrl,
+            bannerUrl,
+            tagline,
+            description,
+            facultyAdvisor,
+            budgetAllocated = 50000,
+            recruitmentOpen = true,
+            recruitmentDeadline,
+            membershipRequirements,
+            objectives,
+            achievements
+          } = payload || {};
+
+          if (!name || !code) {
+            return res.status(400).json({ error: 'Society name and unique code are required.' });
+          }
+
+          const cleanCode = String(code).trim().toUpperCase();
+          const cleanName = String(name).trim();
+
+          const existingClub = db.prepare('SELECT id FROM clubs WHERE code = ? OR LOWER(name) = LOWER(?)').get(cleanCode, cleanName);
+          if (existingClub) {
+            return res.status(409).json({ error: `A society with code "${cleanCode}" or name "${cleanName}" already exists.` });
+          }
+
+          const clubId = `CLUB-${cleanCode.replace(/[^A-Z0-9]/g, '') || Date.now().toString().slice(-4)}`;
+          const defaultLogo = logoUrl?.trim() || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(cleanCode)}`;
+          const defaultBanner = bannerUrl?.trim() || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80';
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          const facultyAdvisorObj = facultyAdvisor || {
+            name: 'Faculty Advisor',
+            designation: `Advisor, ${department}`,
+            email: `advisor.${cleanCode.toLowerCase()}@bup.edu.bd`
+          };
+
+          db.prepare(`
+            INSERT INTO clubs (
+              id, code, name, category, department, founding_year, logo_url, banner_url, tagline, description, faculty_advisor, executives, member_count, featured_events_count, budget_allocated, status, recruitment_open, recruitment_deadline, membership_requirements, objectives, achievements
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', 0, 0, ?, 'Active', ?, ?, ?, ?, ?)
+          `).run(
+            clubId,
+            cleanCode,
+            cleanName,
+            category,
+            department,
+            Number(foundingYear) || new Date().getFullYear(),
+            defaultLogo,
+            defaultBanner,
+            tagline || `${cleanName} at Bangladesh University of Professionals`,
+            description || `${cleanName} provides students with opportunities for leadership, skills enrichment, and campus community engagement.`,
+            JSON.stringify(facultyAdvisorObj),
+            Number(budgetAllocated) || 0,
+            recruitmentOpen ? 1 : 0,
+            recruitmentDeadline || null,
+            JSON.stringify(Array.isArray(membershipRequirements) ? membershipRequirements : ['Enrolled BUP Student', 'Commitment to club activities']),
+            JSON.stringify(Array.isArray(objectives) ? objectives : [`Foster excellence in ${category}`, 'Host premier campus events', 'Skill building workshops']),
+            JSON.stringify(Array.isArray(achievements) ? achievements : ['Chartered by BUP Student Affairs'])
+          );
+
+          // Broadcast notification to all students and faculty
+          db.prepare(`
+            INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+            VALUES (?, ?, ?, 'System', ?, ?)
+          `).run(
+            `NT-${Date.now()}`,
+            `🎉 New Society Chartered: ${cleanName}`,
+            `System Administration has chartered "${cleanName}" (${cleanCode}) under ${department}. Recruitment is now active.`,
+            JSON.stringify(['Student', 'Club_Exec', 'Faculty_Advisor', 'System_Admin']),
+            nowStr
+          );
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: `Society "${cleanName}" created successfully!`, state: stateSnapshot });
+        }
+
+        // --- 12. DELETE CLUB (System Admin Privilege) ---
+        case 'delete-club': {
+          if (currentUser.role !== 'System_Admin') {
+            return res.status(403).json({ error: 'Access Denied: Only System Administrators can dissolve or remove clubs.' });
+          }
+
+          const { clubId } = payload || {};
+          if (!clubId) {
+            return res.status(400).json({ error: 'Club ID is required to remove a club.' });
+          }
+
+          const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId) as any;
+          if (!club) {
+            return res.status(404).json({ error: 'Society not found.' });
+          }
+
+          // 1. Cascade delete all events and their registrations & attendance
+          const clubEvents = db.prepare('SELECT id FROM events WHERE club_id = ?').all(clubId) as any[];
+          for (const evt of clubEvents) {
+            db.prepare('DELETE FROM event_registrations WHERE event_id = ?').run(evt.id);
+            db.prepare('DELETE FROM attendance WHERE event_id = ?').run(evt.id);
+          }
+          db.prepare('DELETE FROM events WHERE club_id = ?').run(clubId);
+
+          // 2. Cascade delete applications, venue bookings, and announcements
+          db.prepare('DELETE FROM membership_applications WHERE club_id = ?').run(clubId);
+          db.prepare('DELETE FROM venue_bookings WHERE club_id = ?').run(clubId);
+          db.prepare('DELETE FROM announcements WHERE club_id = ?').run(clubId);
+
+          // 3. Delete club from clubs table
+          db.prepare('DELETE FROM clubs WHERE id = ?').run(clubId);
+
+          // 4. Clean up user memberships in users table
+          const allUsers = db.prepare('SELECT id, club_memberships FROM users').all() as any[];
+          for (const u of allUsers) {
+            try {
+              const memberships = JSON.parse(u.club_memberships || '[]');
+              if (memberships.some((m: any) => m.clubId === clubId)) {
+                const filtered = memberships.filter((m: any) => m.clubId !== clubId);
+                db.prepare('UPDATE users SET club_memberships = ? WHERE id = ?').run(JSON.stringify(filtered), u.id);
+              }
+            } catch {}
+          }
+
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          // 5. Broadcast notification
+          db.prepare(`
+            INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+            VALUES (?, ?, ?, 'System', ?, ?)
+          `).run(
+            `NT-${Date.now()}`,
+            `Society Dissolved: ${club.name}`,
+            `"${club.name}" (${club.code}) has been officially decommissioned by System Administration.`,
+            JSON.stringify(['Student', 'Club_Exec', 'Faculty_Advisor', 'System_Admin']),
+            nowStr
+          );
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: `Society "${club.name}" and associated records removed successfully.`, state: stateSnapshot });
         }
 
         default:
