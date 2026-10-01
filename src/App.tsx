@@ -3,9 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AnalyticsSummary, UserRole, UserProfile, Club, ClubEvent, Venue, VenueBooking, SystemNotification } from './types/cms';
+import {
+  AnalyticsSummary,
+  UserRole,
+  UserProfile,
+  Club,
+  ClubEvent,
+  Venue,
+  VenueBooking,
+  SystemNotification,
+  MembershipApplication,
+  EventRegistration,
+  AttendanceRecord,
+  ClubAnnouncement
+} from './types/cms';
 import {
   INITIAL_USER_PROFILES,
   BUP_CLUBS,
@@ -13,14 +26,20 @@ import {
   BUP_VENUES,
   INITIAL_VENUE_BOOKINGS,
   INITIAL_NOTIFICATIONS,
-  INITIAL_ANALYTICS
+  INITIAL_ANALYTICS,
+  INITIAL_APPLICATIONS,
+  INITIAL_REGISTRATIONS,
+  INITIAL_ATTENDANCE,
+  INITIAL_ANNOUNCEMENTS
 } from './data/cmsData';
-import { Header } from './components/common/Header';
+import { Header, CmsTabId } from './components/common/Header';
 import { ClubDirectory } from './components/cms/ClubDirectory';
 import { EventHub } from './components/cms/EventHub';
 import { VenueBookingEngine } from './components/cms/VenueBookingEngine';
 import { NotificationCenter } from './components/cms/NotificationCenter';
 import { AdminAnalyticsDashboard } from './components/cms/AdminAnalyticsDashboard';
+import { MembershipHub } from './components/cms/MembershipHub';
+import { MyCampusHub } from './components/cms/MyCampusHub';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { InteractiveBackground } from './components/common/InteractiveBackground';
 import { CommandPalette } from './components/common/CommandPalette';
@@ -49,6 +68,10 @@ interface AppStateShape {
   venues: Venue[];
   bookings: VenueBooking[];
   notifications: SystemNotification[];
+  applications: MembershipApplication[];
+  registrations: EventRegistration[];
+  attendance: AttendanceRecord[];
+  announcements: ClubAnnouncement[];
   analytics: AnalyticsSummary;
 }
 
@@ -59,11 +82,15 @@ const FALLBACK_INITIAL_STATE: AppStateShape = {
   venues: BUP_VENUES,
   bookings: INITIAL_VENUE_BOOKINGS,
   notifications: INITIAL_NOTIFICATIONS,
+  applications: INITIAL_APPLICATIONS,
+  registrations: INITIAL_REGISTRATIONS,
+  attendance: INITIAL_ATTENDANCE,
+  announcements: INITIAL_ANNOUNCEMENTS,
   analytics: INITIAL_ANALYTICS
 };
 
 export default function App() {
-  const [activeCmsTab, setActiveCmsTab] = useState<'clubs' | 'events' | 'venues' | 'notifications' | 'analytics'>('clubs');
+  const [activeCmsTab, setActiveCmsTab] = useState<CmsTabId>('clubs');
   const [selectedRole, setSelectedRole] = useState<UserRole>('Student');
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -74,7 +101,8 @@ export default function App() {
     studentId: '',
     department: 'ICE',
     batch: '2024',
-    role: 'Student' as UserRole
+    role: 'Student' as UserRole,
+    primaryClubId: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authUser, setAuthUser] = useState<UserProfile | null>(null);
@@ -114,8 +142,30 @@ export default function App() {
   const venues = appState.venues.length ? appState.venues : BUP_VENUES;
   const bookings = appState.bookings.length ? appState.bookings : INITIAL_VENUE_BOOKINGS;
   const notifications = appState.notifications.length ? appState.notifications : INITIAL_NOTIFICATIONS;
+  const applications = appState.applications?.length ? appState.applications : INITIAL_APPLICATIONS;
+  const registrations = appState.registrations?.length ? appState.registrations : INITIAL_REGISTRATIONS;
+  const attendance = appState.attendance?.length ? appState.attendance : INITIAL_ATTENDANCE;
+  const announcements = appState.announcements?.length ? appState.announcements : INITIAL_ANNOUNCEMENTS;
   const analytics = appState.analytics?.totalClubs ? appState.analytics : INITIAL_ANALYTICS;
-  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
+
+  const visibleNotifications = useMemo(() => {
+    return notifications.filter((n) => {
+      if (n.targetUserId) {
+        return (
+          currentUser.id === n.targetUserId ||
+          currentUser.studentId === n.targetUserId ||
+          selectedRole === 'System_Admin'
+        );
+      }
+      if (n.targetRoles && n.targetRoles.length > 0) {
+        return n.targetRoles.includes(selectedRole) || selectedRole === 'System_Admin';
+      }
+      return true;
+    });
+  }, [notifications, currentUser.id, currentUser.studentId, selectedRole]);
+
+  const unreadNotificationsCount = visibleNotifications.filter((n) => !n.read).length;
+  const pendingApplicationsCount = applications.filter((a) => a.status === 'Pending').length;
 
   // Global Keyboard Shortcuts (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -293,6 +343,77 @@ export default function App() {
     }
   };
 
+  const handleApplyForMembership = async (
+    clubId: string,
+    form: {
+      statementOfPurpose: string;
+      skillsInterests: string;
+      phone: string;
+      roleName: string;
+      applicationType?: 'Member' | 'Executive' | 'Moderator';
+    }
+  ) => {
+    try {
+      await persistState('submit-membership-application', { clubId, ...form });
+    } catch (error: any) {
+      addToast(error.message || 'Unable to submit application.', 'error');
+    }
+  };
+
+  const handleAppointExecutive = async (clubId: string, targetUserId: string, designation: string) => {
+    try {
+      await persistState('appoint-club-executive', { clubId, targetUserId, designation });
+      addToast(`Appointed as ${designation} successfully!`, 'success');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to appoint executive.', 'error');
+    }
+  };
+
+  const handleRemoveExecutive = async (clubId: string, studentId: string) => {
+    try {
+      await persistState('remove-club-executive', { clubId, studentId });
+      addToast('Executive removed from club roster.', 'info');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to remove executive.', 'error');
+    }
+  };
+
+  const handleReviewApplication = async (
+    applicationId: string,
+    status: 'Approved' | 'Rejected',
+    remarks?: string
+  ) => {
+    try {
+      await persistState('review-membership-application', { applicationId, status, remarks });
+    } catch (error: any) {
+      addToast(error.message || 'Unable to update application decision.', 'error');
+    }
+  };
+
+  const handleRequestApplicationInfo = async (applicationId: string, question: string) => {
+    try {
+      await persistState('request-membership-info', { applicationId, question });
+    } catch (error: any) {
+      addToast(error.message || 'Unable to send clarification question.', 'error');
+    }
+  };
+
+  const handleRespondQna = async (applicationId: string, answer: string) => {
+    try {
+      await persistState('respond-membership-qna', { applicationId, answer });
+    } catch (error: any) {
+      addToast(error.message || 'Unable to submit response.', 'error');
+    }
+  };
+
+  const handleRecordAttendance = async (eventId: string, studentId?: string, passCode?: string) => {
+    try {
+      await persistState('record-attendance', { eventId, studentId, passCode });
+    } catch (error: any) {
+      addToast(error.message || 'Unable to log attendance.', 'error');
+    }
+  };
+
   const handleRSVP = async (eventId: string) => {
     try {
       await persistState('rsvp', { eventId });
@@ -405,66 +526,39 @@ export default function App() {
               </p>
             </div>
 
-            {/* 1-Click Instant Demo Login Buttons */}
-            <div className="p-4 rounded-2xl bg-slate-950/80 border border-white/10 space-y-2.5">
+            {/* Clean System Administrator Access */}
+            <div className="p-4 rounded-2xl bg-slate-950/80 border border-white/10 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider">
-                  Explore a demonstration account
+                <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Fresh Start • Default Administrator</span>
                 </span>
-                <span className="text-[10px] text-slate-400">For evaluation only</span>
+                <span className="text-[10px] text-slate-400 font-mono">admin@bup.edu.bd</span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('Student')}
-                  disabled={isSubmitting}
-                  className="p-2 rounded-xl bg-slate-900 hover:bg-emerald-950/60 hover:border-emerald-500/40 border border-white/5 text-left transition-all text-xs group"
-                >
-                  <p className="font-bold text-white group-hover:text-emerald-300">Tanvir (Student)</p>
-                  <p className="text-[9px] text-slate-400 font-mono">ICE • General Member</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('Club_Exec')}
-                  disabled={isSubmitting}
-                  className="p-2 rounded-xl bg-slate-900 hover:bg-emerald-950/60 hover:border-emerald-500/40 border border-white/5 text-left transition-all text-xs group"
-                >
-                  <p className="font-bold text-white group-hover:text-emerald-300">Anika (Club Exec)</p>
-                  <p className="text-[9px] text-slate-400 font-mono">Robotics President</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('Faculty_Advisor')}
-                  disabled={isSubmitting}
-                  className="p-2 rounded-xl bg-slate-900 hover:bg-emerald-950/60 hover:border-emerald-500/40 border border-white/5 text-left transition-all text-xs group"
-                >
-                  <p className="font-bold text-white group-hover:text-emerald-300">Dr. Shahriar</p>
-                  <p className="text-[9px] text-slate-400 font-mono">Faculty Advisor</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('Venue_Admin')}
-                  disabled={isSubmitting}
-                  className="p-2 rounded-xl bg-slate-900 hover:bg-emerald-950/60 hover:border-emerald-500/40 border border-white/5 text-left transition-all text-xs group"
-                >
-                  <p className="font-bold text-white group-hover:text-emerald-300">Khandakar</p>
-                  <p className="text-[9px] text-slate-400 font-mono">Facilities Admin</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemoLogin('System_Admin')}
-                  disabled={isSubmitting}
-                  className="p-2 rounded-xl bg-slate-900 hover:bg-emerald-950/60 hover:border-emerald-500/40 border border-white/5 text-left transition-all text-xs group col-span-2 sm:col-span-2"
-                >
-                  <p className="font-bold text-white group-hover:text-emerald-300">Dean Office (System Admin)</p>
-                  <p className="text-[9px] text-slate-400 font-mono">Full University Oversight & Analytics</p>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => handleQuickDemoLogin('System_Admin')}
+                disabled={isSubmitting}
+                className="w-full p-3 rounded-xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-slate-900 hover:from-emerald-500/25 hover:to-slate-800 border border-emerald-500/30 text-left transition-all text-xs group flex items-center justify-between cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-sm border border-emerald-500/40">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-white group-hover:text-emerald-300">
+                      Sign in as System Administrator
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono">
+                      admin@bup.edu.bd • Password: admin123
+                    </p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 rounded-lg bg-emerald-400 text-slate-950 font-black text-xs shadow">
+                  1-Click Access →
+                </span>
+              </button>
             </div>
 
             {/* Custom Credentials Form */}
@@ -509,19 +603,23 @@ export default function App() {
                   />
                   <div className="rounded-xl glass-input px-3.5 py-2">
                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                      Account Role
+                      Account Type
                     </label>
                     <select
-                      className="w-full bg-transparent text-xs text-white outline-none"
+                      className="w-full bg-transparent text-xs text-white outline-none cursor-pointer"
                       value={authForm.role}
                       onChange={(e) => setAuthForm((prev) => ({ ...prev, role: e.target.value as UserRole }))}
                     >
-                      <option value="Student" className="bg-slate-950">Student</option>
-                      <option value="Club_Exec" className="bg-slate-950">Club Executive</option>
-                      <option value="Faculty_Advisor" className="bg-slate-950">Faculty Advisor</option>
-                      <option value="Venue_Admin" className="bg-slate-950">Venue Admin</option>
-                      <option value="System_Admin" className="bg-slate-950">System Admin</option>
+                      <option value="Student" className="bg-slate-950">Student (Undergraduate / Postgraduate)</option>
+                      <option value="Faculty_Advisor" className="bg-slate-950">Faculty / Staff Member</option>
                     </select>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-emerald-500/20 text-[11px] text-slate-300 flex items-start gap-2">
+                    <span className="text-emerald-400 font-bold shrink-0">ℹ️ Policy:</span>
+                    <span className="leading-relaxed">
+                      Club Executive, Moderator, and Administrator privileges cannot be self-selected during registration. Register as a Student or Staff member, then apply for Executive or Moderator roles inside the portal for review and appointment.
+                    </span>
                   </div>
                 </>
               )}
@@ -592,6 +690,7 @@ export default function App() {
           onNavigateTab={setActiveCmsTab}
           onRoleChange={setSelectedRole}
           onOpenMotionSettings={() => setIsMotionSettingsOpen(true)}
+          currentUser={currentUser}
         />
 
         {/* Motion & Physics Controller Studio Modal */}
@@ -611,6 +710,7 @@ export default function App() {
           userProfiles={userProfiles}
           currentUser={currentUser}
           unreadNotificationsCount={unreadNotificationsCount}
+          pendingApplicationsCount={pendingApplicationsCount}
           onLogout={handleLogout}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           onOpenMotionSettings={() => setIsMotionSettingsOpen(true)}
@@ -633,6 +733,8 @@ export default function App() {
                       clubs={clubs}
                       currentUser={currentUser}
                       selectedRole={selectedRole}
+                      applications={applications}
+                      onApplyForMembership={handleApplyForMembership}
                       onJoinClub={handleJoinClub}
                       onLeaveClub={handleLeaveClub}
                     />
@@ -655,8 +757,11 @@ export default function App() {
                       venues={venues}
                       currentUser={currentUser}
                       selectedRole={selectedRole}
+                      registrations={registrations}
+                      attendance={attendance}
                       onRSVP={handleRSVP}
                       onCreateEvent={handleCreateEvent}
+                      onRecordAttendance={handleRecordAttendance}
                     />
                   </ErrorBoundary>
                 </motion.div>
@@ -684,6 +789,54 @@ export default function App() {
                 </motion.div>
               )}
 
+              {activeCmsTab === 'membership-hub' && (
+                <motion.div
+                  key="membership-hub"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  transition={{ duration: 0.25 * (1 / motionSettings.speed) }}
+                >
+                  <ErrorBoundary fallbackTitle="Membership Hub Component">
+                    <MembershipHub
+                      applications={applications}
+                      clubs={clubs}
+                      users={userProfiles}
+                      currentUser={currentUser}
+                      selectedRole={selectedRole}
+                      onReviewApplication={handleReviewApplication}
+                      onRequestApplicationInfo={handleRequestApplicationInfo}
+                      onRespondQna={handleRespondQna}
+                      onApplyForClub={() => setActiveCmsTab('clubs')}
+                      onAppointExecutive={handleAppointExecutive}
+                      onRemoveExecutive={handleRemoveExecutive}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
+
+              {activeCmsTab === 'my-passes' && (
+                <motion.div
+                  key="my-passes"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  transition={{ duration: 0.25 * (1 / motionSettings.speed) }}
+                >
+                  <ErrorBoundary fallbackTitle="My Campus Life Component">
+                    <MyCampusHub
+                      currentUser={currentUser}
+                      clubs={clubs}
+                      events={events}
+                      registrations={registrations}
+                      applications={applications}
+                      attendance={attendance}
+                      onNavigateToTab={(tab) => setActiveCmsTab(tab as any)}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
+
               {activeCmsTab === 'notifications' && (
                 <motion.div
                   key="notifications"
@@ -694,10 +847,13 @@ export default function App() {
                 >
                   <ErrorBoundary fallbackTitle="Notification Center">
                     <NotificationCenter
-                      notifications={notifications}
+                      notifications={visibleNotifications}
+                      applications={applications}
+                      currentUser={currentUser}
                       onMarkAsRead={handleMarkNotificationRead}
                       onClearAll={handleClearNotifications}
                       selectedRole={selectedRole}
+                      onRespondQna={handleRespondQna}
                     />
                   </ErrorBoundary>
                 </motion.div>

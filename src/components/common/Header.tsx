@@ -1,5 +1,5 @@
-import React from 'react';
-import { motion } from 'motion/react';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, UserRole } from '../../types/cms';
 import {
   Calendar,
@@ -13,18 +13,25 @@ import {
   Sliders,
   Sparkles,
   Volume2,
-  VolumeX
+  VolumeX,
+  Ticket,
+  UserCheck,
+  GraduationCap,
+  Crown
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
+export type CmsTabId = 'clubs' | 'events' | 'venues' | 'membership-hub' | 'my-passes' | 'notifications' | 'analytics';
+
 interface HeaderProps {
-  activeCmsTab: 'clubs' | 'events' | 'venues' | 'notifications' | 'analytics';
-  setActiveCmsTab: (tab: 'clubs' | 'events' | 'venues' | 'notifications' | 'analytics') => void;
+  activeCmsTab: CmsTabId;
+  setActiveCmsTab: (tab: CmsTabId) => void;
   selectedRole: UserRole;
   onRoleChange: (role: UserRole) => void;
   userProfiles: UserProfile[];
   currentUser: UserProfile;
   unreadNotificationsCount: number;
+  pendingApplicationsCount?: number;
   onLogout: () => void;
   onOpenCommandPalette: () => void;
   onOpenMotionSettings: () => void;
@@ -38,14 +45,25 @@ export const Header: React.FC<HeaderProps> = ({
   userProfiles,
   currentUser,
   unreadNotificationsCount,
+  pendingApplicationsCount = 0,
   onLogout,
   onOpenCommandPalette,
   onOpenMotionSettings
 }) => {
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const tabs = [
     { id: 'clubs' as const, label: 'Clubs & Societies', icon: Users },
     { id: 'events' as const, label: 'Events & RSVPs', icon: Calendar },
     { id: 'venues' as const, label: 'Venue Booking', icon: Building2 },
+    ...(selectedRole === 'Student'
+      ? [{ id: 'my-passes' as const, label: 'My Campus Life', icon: Ticket }]
+      : []),
+    {
+      id: 'membership-hub' as const,
+      label: selectedRole === 'Student' ? 'Applications' : 'Membership Hub',
+      icon: UserCheck,
+      count: selectedRole !== 'Student' && pendingApplicationsCount > 0 ? pendingApplicationsCount : undefined
+    },
     { id: 'notifications' as const, label: 'Notifications', icon: Bell, count: unreadNotificationsCount },
     ...(selectedRole === 'Venue_Admin' ||
     selectedRole === 'System_Admin' ||
@@ -135,24 +153,54 @@ export const Header: React.FC<HeaderProps> = ({
               <Sliders className="w-3.5 h-3.5" />
             </button>
 
-            {/* Role Switcher Pill */}
-            <div className="relative flex items-center bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-white/10 shadow-inner">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 mr-1.5 shrink-0" />
-              <select
-                value={selectedRole}
-                onChange={(e) => {
-                  soundFx.playClick();
-                  onRoleChange(e.target.value as UserRole);
-                }}
-                className="bg-transparent text-xs text-white font-bold focus:outline-none cursor-pointer pr-1"
+            {/* Role Simulation for System Admin OR Official Verified Badge */}
+            {currentUser.role === 'System_Admin' ? (
+              <div
+                className="relative flex items-center bg-purple-950/40 px-2.5 py-1.5 rounded-xl border border-purple-500/30 shadow-inner"
+                title="System Administrator: Switch perspective to preview portal experience as different roles"
               >
-                <option value="Student" className="bg-slate-950 text-white">Student</option>
-                <option value="Club_Exec" className="bg-slate-950 text-white">Club Exec</option>
-                <option value="Faculty_Advisor" className="bg-slate-950 text-white">Faculty Advisor</option>
-                <option value="Venue_Admin" className="bg-slate-950 text-white">Venue Admin</option>
-                <option value="System_Admin" className="bg-slate-950 text-white">System Admin</option>
-              </select>
-            </div>
+                <span className="text-[10px] font-mono text-purple-300 font-bold mr-1.5 hidden sm:inline">VIEW AS:</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-400 mr-1.5 shrink-0" />
+                <select
+                  value={selectedRole}
+                  onChange={(e) => {
+                    soundFx.playClick();
+                    onRoleChange(e.target.value as UserRole);
+                  }}
+                  className="bg-transparent text-xs text-purple-100 font-bold focus:outline-none cursor-pointer pr-1"
+                >
+                  <option value="System_Admin" className="bg-slate-950 text-white">System Admin (Full)</option>
+                  <option value="Student" className="bg-slate-950 text-white">Student</option>
+                  <option value="Club_Exec" className="bg-slate-950 text-white">Club Exec</option>
+                  <option value="Faculty_Advisor" className="bg-slate-950 text-white">Faculty Advisor</option>
+                  <option value="Venue_Admin" className="bg-slate-950 text-white">Venue Admin</option>
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-white/10 shadow-inner">
+                {currentUser.role === 'Club_Exec' ? (
+                  <>
+                    <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-xs font-bold text-amber-300">Club Executive</span>
+                  </>
+                ) : currentUser.role === 'Faculty_Advisor' ? (
+                  <>
+                    <GraduationCap className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span className="text-xs font-bold text-blue-300">Faculty Staff</span>
+                  </>
+                ) : currentUser.role === 'Venue_Admin' ? (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span className="text-xs font-bold text-cyan-300">Venue Admin</span>
+                  </>
+                ) : (
+                  <>
+                    <GraduationCap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-xs font-bold text-emerald-300">Student</span>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* User Profile & Logout */}
             <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-white/10">
@@ -173,10 +221,10 @@ export const Header: React.FC<HeaderProps> = ({
                 type="button"
                 onClick={() => {
                   soundFx.playClick();
-                  onLogout();
+                  setIsLogoutConfirmOpen(true);
                 }}
                 title="Sign out"
-                className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/40 text-rose-700 hover:text-rose-800 border border-white/10 hover:border-rose-500/30 transition-all"
+                className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/40 text-rose-500 hover:text-rose-400 border border-white/10 hover:border-rose-500/30 transition-all cursor-pointer"
               >
                 <LogOut className="h-3.5 w-3.5" />
               </button>
@@ -233,6 +281,70 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <AnimatePresence>
+        {isLogoutConfirmOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+            onClick={() => setIsLogoutConfirmOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-panel-glow border border-rose-500/40 rounded-3xl p-6 sm:p-8 max-w-sm w-full bg-[#080d19] shadow-2xl text-center space-y-5"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto shadow-inner">
+                <LogOut className="w-7 h-7" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-lg font-black text-white font-heading">
+                  Confirm Sign Out
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Are you sure you want to end your current session as <strong className="text-white">{currentUser.name}</strong>?
+                </p>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-900 border border-white/10 text-[11px] font-mono text-emerald-400">
+                  <span>{currentUser.studentId}</span>
+                  <span className="text-slate-600">•</span>
+                  <span>{selectedRole.replace('_', ' ')}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setIsLogoutConfirmOpen(false);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/10 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick(400);
+                    setIsLogoutConfirmOpen(false);
+                    onLogout();
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white text-xs font-bold shadow-lg shadow-rose-950/50 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Yes, Sign Out</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 };

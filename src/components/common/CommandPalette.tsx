@@ -15,7 +15,7 @@ import {
   X,
   FileSpreadsheet
 } from 'lucide-react';
-import { Club, ClubEvent, Venue, UserRole } from '../../types/cms';
+import { Club, ClubEvent, Venue, UserRole, UserProfile } from '../../types/cms';
 import { soundFx } from '../../utils/audioFx';
 
 interface CommandPaletteProps {
@@ -28,6 +28,7 @@ interface CommandPaletteProps {
   onRoleChange: (role: UserRole) => void;
   onOpenMotionSettings: () => void;
   onExportCsv?: () => void;
+  currentUser?: UserProfile;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -39,7 +40,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onNavigateTab,
   onRoleChange,
   onOpenMotionSettings,
-  onExportCsv
+  onExportCsv,
+  currentUser
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -60,7 +62,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     id: string;
     title: string;
     subtitle: string;
-    category: 'Navigation' | 'Clubs' | 'Events' | 'Venues' | 'Role Switch' | 'Tools';
+    category: 'Navigation' | 'Clubs' | 'Events' | 'Venues' | 'Role Switch' | 'Tools' | 'Admin Simulation';
     icon: any;
     action: () => void;
   }> = [
@@ -148,63 +150,67 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           }
         ]
       : []),
-
-    // Role Switchers
-    {
-      id: 'role-student',
-      title: 'Switch Role: Student',
-      subtitle: 'Standard student view for joining clubs & RSVP passes',
-      category: 'Role Switch',
-      icon: ShieldCheck,
-      action: () => {
-        onRoleChange('Student');
-        onClose();
-      }
-    },
-    {
-      id: 'role-exec',
-      title: 'Switch Role: Club Executive',
-      subtitle: 'Executive permissions to publish events & book venues',
-      category: 'Role Switch',
-      icon: ShieldCheck,
-      action: () => {
-        onRoleChange('Club_Exec');
-        onClose();
-      }
-    },
-    {
-      id: 'role-advisor',
-      title: 'Switch Role: Faculty Advisor',
-      subtitle: 'Society advisor oversight and review permissions',
-      category: 'Role Switch',
-      icon: ShieldCheck,
-      action: () => {
-        onRoleChange('Faculty_Advisor');
-        onClose();
-      }
-    },
-    {
-      id: 'role-venue',
-      title: 'Switch Role: Venue Administrator',
-      subtitle: 'Facilities Office sign-off queue & schedule management',
-      category: 'Role Switch',
-      icon: ShieldCheck,
-      action: () => {
-        onRoleChange('Venue_Admin');
-        onClose();
-      }
-    },
-    {
-      id: 'role-admin',
-      title: 'Switch Role: System Administrator',
-      subtitle: 'Full university oversight & BI analytics dashboard',
-      category: 'Role Switch',
-      icon: ShieldCheck,
-      action: () => {
-        onRoleChange('System_Admin');
-        onClose();
-      }
-    },
+ 
+     // Perspective Simulation (Restricted to System Administrators)
+     ...(currentUser?.role === 'System_Admin'
+       ? [
+           {
+             id: 'role-student',
+             title: 'Simulate Perspective: Student',
+             subtitle: 'Admin preview: standard student view for joining clubs & RSVP passes',
+             category: 'Admin Simulation' as const,
+             icon: ShieldCheck,
+             action: () => {
+               onRoleChange('Student');
+               onClose();
+             }
+           },
+           {
+             id: 'role-exec',
+             title: 'Simulate Perspective: Club Executive',
+             subtitle: 'Admin preview: executive permissions to publish events & book venues',
+             category: 'Admin Simulation' as const,
+             icon: ShieldCheck,
+             action: () => {
+               onRoleChange('Club_Exec');
+               onClose();
+             }
+           },
+           {
+             id: 'role-advisor',
+             title: 'Simulate Perspective: Faculty Advisor',
+             subtitle: 'Admin preview: society advisor oversight and review permissions',
+             category: 'Admin Simulation' as const,
+             icon: ShieldCheck,
+             action: () => {
+               onRoleChange('Faculty_Advisor');
+               onClose();
+             }
+           },
+           {
+             id: 'role-venue',
+             title: 'Simulate Perspective: Venue Administrator',
+             subtitle: 'Admin preview: Facilities Office sign-off queue & schedule management',
+             category: 'Admin Simulation' as const,
+             icon: ShieldCheck,
+             action: () => {
+               onRoleChange('Venue_Admin');
+               onClose();
+             }
+           },
+           {
+             id: 'role-admin',
+             title: 'Simulate Perspective: System Administrator',
+             subtitle: 'Admin preview: full university oversight & BI analytics dashboard',
+             category: 'Admin Simulation' as const,
+             icon: ShieldCheck,
+             action: () => {
+               onRoleChange('System_Admin');
+               onClose();
+             }
+           }
+         ]
+       : []),
 
     // Dynamic Clubs
     ...clubs.map((c) => ({

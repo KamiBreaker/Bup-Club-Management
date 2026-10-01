@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { ClubEvent, Club, Venue, UserProfile, UserRole } from '../../types/cms';
+import { ClubEvent, Club, Venue, UserProfile, UserRole, EventRegistration, AttendanceRecord } from '../../types/cms';
 import {
   Calendar,
   Clock,
@@ -18,7 +18,11 @@ import {
   ScanLine,
   Check,
   Zap,
-  Ticket
+  Ticket,
+  FileSpreadsheet,
+  Search,
+  ShieldCheck,
+  UserCheck
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -28,8 +32,11 @@ interface EventHubProps {
   venues: Venue[];
   currentUser: UserProfile;
   selectedRole: UserRole;
+  registrations?: EventRegistration[];
+  attendance?: AttendanceRecord[];
   onRSVP: (eventId: string) => void;
   onCreateEvent: (newEvent: Partial<ClubEvent>) => void;
+  onRecordAttendance?: (eventId: string, studentId?: string, passCode?: string) => void;
 }
 
 export const EventHub: React.FC<EventHubProps> = ({
@@ -38,15 +45,22 @@ export const EventHub: React.FC<EventHubProps> = ({
   venues,
   currentUser,
   selectedRole,
+  registrations = [],
+  attendance = [],
   onRSVP,
-  onCreateEvent
+  onCreateEvent,
+  onRecordAttendance
 }) => {
   const [activeTab, setActiveTab] = useState<'All' | 'Upcoming' | 'Registered'>('All');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [activeQrModal, setActiveQrModal] = useState<ClubEvent | null>(null);
+  const [activeRosterModal, setActiveRosterModal] = useState<ClubEvent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isSimulatingScan, setIsSimulatingScan] = useState(false);
-  const [scanVerified, setScanVerified] = useState(false);
+  const [isDownloadingQr, setIsDownloadingQr] = useState(false);
+
+  // Live Usher Check-in input
+  const [checkInInput, setCheckInInput] = useState('');
+  const [rosterSearch, setRosterSearch] = useState('');
 
   // New Event Form State
   const [newTitle, setNewTitle] = useState('');
@@ -59,9 +73,15 @@ export const EventHub: React.FC<EventHubProps> = ({
   const [newEndTime, setNewEndTime] = useState('13:00');
   const [newVenueId, setNewVenueId] = useState(venues?.[0]?.id || 'VEN-01');
   const [newMaxSeats, setNewMaxSeats] = useState(150);
+  const [newDeadline, setNewDeadline] = useState('2026-08-24');
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
   const categories = ['All', 'Workshop', 'Competition', 'Cultural', 'Seminar', 'Recruitment', 'Training'];
+
+  const isExecutiveOrAdmin =
+    selectedRole === 'Club_Exec' ||
+    selectedRole === 'Faculty_Advisor' ||
+    selectedRole === 'System_Admin';
 
   const filteredEvents = (events ?? []).filter((evt) => {
     if (!evt) return false;
@@ -85,6 +105,47 @@ export const EventHub: React.FC<EventHubProps> = ({
       });
     } catch {}
     onRSVP(eventId);
+  };
+
+  const handleManualCheckIn = (eventId: string, studentIdOrPass: string) => {
+    if (!studentIdOrPass.trim() || !onRecordAttendance) return;
+    soundFx.playSuccess();
+    try {
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.5 }
+      });
+    } catch {}
+
+    const isPass = studentIdOrPass.toUpperCase().includes('BUP-');
+    if (isPass) {
+      onRecordAttendance(eventId, undefined, studentIdOrPass.trim());
+    } else {
+      onRecordAttendance(eventId, studentIdOrPass.trim(), undefined);
+    }
+    setCheckInInput('');
+  };
+
+  const handleDownloadQrTicket = async (passCode: string, title: string, qrUrl: string) => {
+    soundFx.playSuccess();
+    setIsDownloadingQr(true);
+    try {
+      const res = await fetch(qrUrl);
+      const blob = await res.blob();
+      const objUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = `BUP_Pass_${passCode}_${title.slice(0, 15).replace(/\s+/g, '_')}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(objUrl);
+    } catch {
+      window.open(qrUrl, '_blank');
+    } finally {
+      setIsDownloadingQr(false);
+    }
   };
 
   const handleGenerateAiDescription = async () => {
@@ -120,25 +181,6 @@ export const EventHub: React.FC<EventHubProps> = ({
     }
   };
 
-  const handleSimulateScan = () => {
-    setIsSimulatingScan(true);
-    setScanVerified(false);
-    soundFx.playClick(1200);
-
-    setTimeout(() => {
-      setIsSimulatingScan(false);
-      setScanVerified(true);
-      soundFx.playSuccess();
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.5 }
-        });
-      } catch {}
-    }, 1500);
-  };
-
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const selectedClub = (clubs ?? []).find((c) => c.id === newClubId);
@@ -161,13 +203,38 @@ export const EventHub: React.FC<EventHubProps> = ({
       registeredCount: 1,
       status: 'Upcoming',
       isRSVPAllowed: true,
-      registeredUserIds: [currentUser.id]
+      registeredUserIds: [currentUser.id],
+      registrationDeadline: newDeadline
     });
 
     soundFx.playSuccess();
     setIsCreateModalOpen(false);
     setNewTitle('');
     setNewDescription('');
+  };
+
+  const exportEventRosterCsv = (event: ClubEvent) => {
+    soundFx.playSuccess();
+    const eventRegs = registrations.filter((r) => r.eventId === event.id);
+    const eventAtts = attendance.filter((a) => a.eventId === event.id);
+
+    const header = 'Event ID,Event Title,Student Name,Student ID,Department,Email,Pass Code,Registration Date,Attendance Status,Marked At\n';
+    const rows = eventRegs
+      .map((r) => {
+        const att = eventAtts.find((a) => a.studentId === r.studentId || a.userId === r.userId);
+        const isPresent = att ? 'Present' : r.attended ? 'Present' : 'Unchecked';
+        const markedAt = att?.markedAt || '';
+        return `"${r.eventId}","${r.eventTitle}","${r.studentName}","${r.studentId}","${r.department}","${r.email}","${r.passCode}","${r.registrationDate}","${isPresent}","${markedAt}"`;
+      })
+      .join('\n');
+
+    const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + header + rows);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `BUP_Attendance_Roster_${event.title.replace(/\s+/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -179,17 +246,17 @@ export const EventHub: React.FC<EventHubProps> = ({
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
               <Ticket className="w-3.5 h-3.5 text-amber-300" />
-              <span>Campus calendar and registrations</span>
+              <span>Campus Calendar, RSVPs & Gate Attendance</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-heading">
               BUP Event Operations Hub
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              Discover official workshops, competitions, cultural programmes, and guest seminars. Register for your place in one step.
+              Official university workshops, competitions, cultural festivals, and seminars. Register with instant digital QR passes and automated gate check-in.
             </p>
           </div>
 
-          {(selectedRole === 'Club_Exec' || selectedRole === 'System_Admin' || selectedRole === 'Faculty_Advisor') && (
+          {isExecutiveOrAdmin && (
             <motion.button
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
@@ -219,12 +286,12 @@ export const EventHub: React.FC<EventHubProps> = ({
                   setActiveTab(tab);
                 }}
                 className={`relative px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                  isSelected ? 'text-emerald-950 font-black bg-emerald-400 shadow' : 'text-emerald-800 hover:text-emerald-950'
+                  isSelected ? 'text-emerald-950 font-black bg-emerald-400 shadow' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 {tab === 'All' && `All Events (${(events ?? []).length})`}
                 {tab === 'Upcoming' && 'Upcoming Calendar'}
-                {tab === 'Registered' && 'My Passes'}
+                {tab === 'Registered' && 'My Registered Passes'}
               </button>
             );
           })}
@@ -243,7 +310,7 @@ export const EventHub: React.FC<EventHubProps> = ({
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   isSelected
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/50 shadow-sm'
+                    ? 'bg-emerald-400 text-slate-950 font-black shadow-sm'
                     : 'bg-slate-900/60 text-slate-400 hover:bg-slate-800 border border-white/5'
                 }`}
               >
@@ -258,11 +325,16 @@ export const EventHub: React.FC<EventHubProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {filteredEvents.map((evt) => {
           const registeredIds = evt.registeredUserIds ?? [];
+          const attendeeIds = evt.attendeeUserIds ?? [];
           const isRegistered = registeredIds.includes(currentUser?.id || '');
+          const isAttended = attendeeIds.includes(currentUser?.id || '');
           const maxSeats = evt.maxSeats || 100;
           const regCount = evt.registeredCount || registeredIds.length || 0;
           const isFull = regCount >= maxSeats;
           const fillPercentage = Math.min(100, Math.round((regCount / maxSeats) * 100));
+
+          // User's registration record if exists
+          const myReg = registrations.find((r) => r.eventId === evt.id && (r.userId === currentUser.id || r.studentId === currentUser.studentId));
 
           return (
             <motion.div
@@ -285,6 +357,12 @@ export const EventHub: React.FC<EventHubProps> = ({
                   <span className="absolute top-3 left-3 bg-emerald-500 text-emerald-950 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow">
                     {evt.category}
                   </span>
+
+                  {evt.registrationDeadline && (
+                    <span className="absolute top-3 right-3 text-[10px] font-mono font-bold bg-slate-950/85 text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
+                      Deadline: {evt.registrationDeadline}
+                    </span>
+                  )}
 
                   <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -312,25 +390,44 @@ export const EventHub: React.FC<EventHubProps> = ({
                     </p>
                   </div>
 
-                  {/* Seat Capacity Progress Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                      <span>Live Seat Capacity</span>
-                      <span className="text-emerald-400">{fillPercentage}% Filled</span>
+                  {/* Seat Capacity Progress Bar & Detailed Statistics */}
+                  <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-white/5 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="font-bold text-white">
+                          {maxSeats - regCount > 0 ? (
+                            <span className="text-emerald-400 font-extrabold">{maxSeats - regCount} Seats Available</span>
+                          ) : (
+                            <span className="text-rose-400 font-extrabold">0 Seats Left (Housefull)</span>
+                          )}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-300">
+                        {regCount} / {maxSeats} Booked ({fillPercentage}%)
+                      </span>
                     </div>
-                    <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+
+                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${fillPercentage}%` }}
                         transition={{ duration: 0.8, ease: 'easeOut' }}
                         className={`h-full rounded-full ${
-                          fillPercentage >= 90
+                          fillPercentage >= 100
                             ? 'bg-rose-500'
-                            : fillPercentage >= 70
+                            : fillPercentage >= 80
                             ? 'bg-amber-400'
                             : 'bg-emerald-400'
                         }`}
                       />
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono pt-0.5">
+                      <span>Total Venue Capacity: <strong>{maxSeats} Seats</strong></span>
+                      <span className={isFull ? 'text-rose-400 font-bold' : 'text-emerald-400 font-semibold'}>
+                        {isFull ? 'Registration Full' : `${maxSeats - regCount} Seats Left to Reserve`}
+                      </span>
                     </div>
                   </div>
 
@@ -352,47 +449,236 @@ export const EventHub: React.FC<EventHubProps> = ({
               </div>
 
               {/* Action Bar */}
-              <div className="p-4 bg-slate-950/60 border-t border-white/10 flex items-center justify-between">
-                {isRegistered ? (
-                  <div className="flex items-center gap-2 w-full justify-between">
-                    <span className="text-xs font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>RSVP Confirmed</span>
+              <div className="p-4 bg-slate-950/60 border-t border-white/10 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  {isRegistered ? (
+                    <div className="flex items-center gap-2 w-full justify-between">
+                      <span className="text-xs font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{isAttended ? 'Verified Present' : 'Pass Confirmed'}</span>
+                      </span>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => {
+                          soundFx.playClick();
+                          setActiveQrModal(evt);
+                        }}
+                        className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 text-xs font-black px-4 py-2 rounded-xl shadow-lg shadow-emerald-950/50"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>View Digital Pass</span>
+                      </motion.button>
+                    </div>
+                  ) : isFull ? (
+                    <span className="text-xs font-bold text-rose-300 bg-rose-950/60 border border-rose-800 px-3 py-2 rounded-xl w-full text-center">
+                      All Seats Reserved (Full)
                     </span>
+                  ) : (
                     <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => {
-                        soundFx.playClick();
-                        setActiveQrModal(evt);
-                        setScanVerified(false);
-                      }}
-                      className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 text-xs font-black px-4 py-2 rounded-xl shadow-lg shadow-emerald-950/50"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => handleRSVPWithCelebration(evt.id)}
+                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold py-2.5 rounded-xl shadow-lg shadow-emerald-950/40 transition-all flex items-center justify-center gap-2"
                     >
-                      <QrCode className="w-3.5 h-3.5" />
-                      <span>View event pass</span>
+                      <Zap className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Register for this event</span>
                     </motion.button>
-                  </div>
-                ) : isFull ? (
-                  <span className="text-xs font-bold text-rose-300 bg-rose-950/60 border border-rose-800 px-3 py-2 rounded-xl w-full text-center">
-                    All Seats Reserved
-                  </span>
-                ) : (
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => handleRSVPWithCelebration(evt.id)}
-                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold py-2.5 rounded-xl shadow-lg shadow-emerald-950/40 transition-all flex items-center justify-center gap-2"
+                  )}
+                </div>
+
+                {/* Executive Attendance Management Button */}
+                {isExecutiveOrAdmin && (
+                  <button
+                    onClick={() => {
+                      soundFx.playClick();
+                      setActiveRosterModal(evt);
+                      setCheckInInput('');
+                      setRosterSearch('');
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-emerald-300 text-[11px] font-bold border border-emerald-500/20 transition-all"
                   >
-                    <Zap className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Register for this event</span>
-                  </motion.button>
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      Gate Check-in & Roster ({attendeeIds.length} attended / {regCount} registered)
+                    </span>
+                  </button>
                 )}
               </div>
             </motion.div>
           );
         })}
       </div>
+
+      {/* EXECUTIVE ROSTER & GATE CHECK-IN MODAL */}
+      <AnimatePresence>
+        {activeRosterModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setActiveRosterModal(null)}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="glass-panel rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-emerald-500/40 shadow-2xl relative z-10 p-6 sm:p-8 space-y-5 bg-[#090e18]"
+            >
+              {/* Header */}
+              <div className="flex justify-between items-start border-b border-white/10 pb-4">
+                <div>
+                  <span className="text-emerald-400 text-[11px] font-mono font-bold uppercase tracking-wider">
+                    Executive Gate Control & Attendance Verification
+                  </span>
+                  <h3 className="text-xl font-extrabold text-white mt-1">
+                    {activeRosterModal.title}
+                  </h3>
+                  <p className="text-slate-400 text-xs">
+                    {activeRosterModal.venueName} • {activeRosterModal.date} ({activeRosterModal.startTime} - {activeRosterModal.endTime})
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveRosterModal(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Attendance Quick Stats */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-white/10 text-center">
+                  <span className="text-[11px] text-slate-400 block font-medium">Registered Attendees</span>
+                  <span className="text-xl font-black text-white font-mono">
+                    {activeRosterModal.registeredCount || 0}
+                  </span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 text-center">
+                  <span className="text-[11px] text-emerald-400 block font-medium">Verified Checked In</span>
+                  <span className="text-xl font-black text-emerald-400 font-mono">
+                    {(activeRosterModal.attendeeUserIds ?? []).length}
+                  </span>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-amber-500/30 text-center">
+                  <span className="text-[11px] text-amber-300 block font-medium">Pending Check-in</span>
+                  <span className="text-xl font-black text-amber-300 font-mono">
+                    {Math.max(0, (activeRosterModal.registeredCount || 0) - (activeRosterModal.attendeeUserIds ?? []).length)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Usher Fast Scanner Bar */}
+              <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 space-y-2">
+                <label className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                  <ScanLine className="w-4 h-4 text-emerald-400 animate-pulse" />
+                  <span>Usher Gate Scanner (Enter Student ID or Pass Code)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. 21041001 or BUP-ROBO-9412"
+                    value={checkInInput}
+                    onChange={(e) => setCheckInInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleManualCheckIn(activeRosterModal.id, checkInInput);
+                      }
+                    }}
+                    className="flex-1 text-xs px-3.5 py-2.5 rounded-xl glass-input placeholder-slate-500 font-mono focus:outline-none"
+                  />
+                  <button
+                    onClick={() => handleManualCheckIn(activeRosterModal.id, checkInInput)}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-black text-xs shadow-md transition-all"
+                  >
+                    Log Gate Attendance
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Export Bar */}
+              <div className="flex justify-between items-center gap-4">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search attendee by name, student ID, department..."
+                    value={rosterSearch}
+                    onChange={(e) => setRosterSearch(e.target.value)}
+                    className="w-full text-xs pl-9 pr-3 py-2 rounded-xl glass-input placeholder-slate-400 focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={() => exportEventRosterCsv(activeRosterModal)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold border border-emerald-500/30 shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Attendance CSV</span>
+                </button>
+              </div>
+
+              {/* Roster Table */}
+              <div className="rounded-2xl border border-white/10 overflow-hidden">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-950/80 text-slate-400 font-mono text-[11px] border-b border-white/10">
+                    <tr>
+                      <th className="py-2.5 px-3">Student Name</th>
+                      <th className="py-2.5 px-3">Student ID</th>
+                      <th className="py-2.5 px-3">Department</th>
+                      <th className="py-2.5 px-3">Pass Code</th>
+                      <th className="py-2.5 px-3 text-right">Gate Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {registrations
+                      .filter((r) => r.eventId === activeRosterModal.id)
+                      .filter(
+                        (r) =>
+                          r.studentName.toLowerCase().includes(rosterSearch.toLowerCase()) ||
+                          r.studentId.toLowerCase().includes(rosterSearch.toLowerCase()) ||
+                          r.passCode.toLowerCase().includes(rosterSearch.toLowerCase())
+                      )
+                      .map((reg) => {
+                        const isPresent =
+                          reg.attended ||
+                          (activeRosterModal.attendeeUserIds ?? []).includes(reg.userId);
+
+                        return (
+                          <tr key={reg.id} className="hover:bg-white/5 transition-colors">
+                            <td className="py-3 px-3 font-bold text-white">{reg.studentName}</td>
+                            <td className="py-3 px-3 font-mono text-emerald-400">{reg.studentId}</td>
+                            <td className="py-3 px-3 text-slate-300">{reg.department}</td>
+                            <td className="py-3 px-3 font-mono text-teal-300">{reg.passCode}</td>
+                            <td className="py-3 px-3 text-right">
+                              {isPresent ? (
+                                <span className="inline-flex items-center gap-1 text-emerald-400 font-bold text-[11px] bg-emerald-500/15 px-2.5 py-1 rounded-full border border-emerald-500/30">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Present</span>
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleManualCheckIn(activeRosterModal.id, reg.studentId)}
+                                  className="px-3 py-1 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-[11px] shadow transition-all"
+                                >
+                                  Mark Present
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Holographic 3D QR Ticket Pass Modal */}
       <AnimatePresence>
@@ -413,8 +699,6 @@ export const EventHub: React.FC<EventHubProps> = ({
               transition={{ type: 'spring', damping: 24, stiffness: 300 }}
               className="relative max-w-sm w-full glass-panel-glow rounded-3xl p-6 text-center border border-emerald-500/40 shadow-2xl z-10 space-y-4 hologram-foil overflow-hidden"
             >
-              {/* Scan beam laser effect */}
-              {isSimulatingScan && <div className="scan-beam" />}
 
               <button
                 onClick={() => setActiveQrModal(null)}
@@ -423,56 +707,83 @@ export const EventHub: React.FC<EventHubProps> = ({
                 <X className="w-4 h-4" />
               </button>
 
-              <div>
-                <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/40 uppercase tracking-wider inline-flex items-center gap-1.5">
-                  <ShieldCheckIcon className="w-3 h-3 text-emerald-400" />
-                  Official BUP Verified Pass
-                </span>
-                <h3 className="text-base font-black text-white mt-2 font-heading">{activeQrModal.title}</h3>
-                <p className="text-xs text-emerald-300/80 font-mono mt-0.5">{activeQrModal.venueName}</p>
-              </div>
+            {(() => {
+              const currentReg = registrations.find(
+                (r) => r.eventId === activeQrModal.id && (r.userId === currentUser?.id || r.studentId === currentUser?.studentId)
+              );
+              const currentPassCode = currentReg?.passCode || `BUP-PASS-${activeQrModal.id.slice(-4)}`;
+              const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(
+                `BUP-EVENT-PASS:${activeQrModal.id}:${currentUser?.studentId}:${currentPassCode}`
+              )}`;
 
-              {/* QR Hologram Box */}
-              <div className="relative inline-block p-4 bg-slate-950/90 rounded-2xl border border-emerald-500/40 shadow-inner">
-                <QrCode className="w-36 h-36 text-emerald-400 mx-auto" />
-                {scanVerified && (
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="absolute inset-0 bg-emerald-950/90 rounded-2xl flex flex-col items-center justify-center p-2 text-emerald-300"
-                  >
-                    <CheckCircle2 className="w-12 h-12 text-emerald-400 mb-1" />
-                    <p className="font-extrabold text-xs">GATE ACCESS GRANTED</p>
-                    <p className="text-[10px] font-mono text-emerald-400">Verified by Usher #4</p>
-                  </motion.div>
-                )}
-              </div>
+              return (
+                <>
+                  <div>
+                    <span className="text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/40 uppercase tracking-wider inline-flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      Official BUP Digital Entry Pass
+                    </span>
+                    <h3 className="text-base font-black text-white mt-2 font-heading">{activeQrModal.title}</h3>
+                    <p className="text-xs text-emerald-300/80 font-mono mt-0.5">{activeQrModal.venueName}</p>
+                  </div>
 
-              {/* Attendee Credentials Card */}
-              <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-white/10 text-left text-xs space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 text-[11px]">Pass Holder:</span>
-                  <strong className="text-white font-bold">{currentUser?.name}</strong>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 text-[11px]">Student ID:</span>
-                  <strong className="font-mono text-emerald-400">{currentUser?.studentId}</strong>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-400 text-[11px]">Event Timing:</span>
-                  <span className="text-slate-300 font-mono text-[11px]">{activeQrModal.date} ({activeQrModal.startTime})</span>
-                </div>
-              </div>
+                  {/* QR Image Box */}
+                  <div className="relative inline-block p-4 bg-white rounded-3xl shadow-2xl mx-auto">
+                    <img
+                      src={qrImageUrl}
+                      alt="QR Entry Pass"
+                      className="w-44 h-44 mx-auto object-contain"
+                    />
+                  </div>
 
-              {/* Scan Simulation Action */}
-              <button
-                onClick={handleSimulateScan}
-                disabled={isSimulatingScan}
-                className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-bold transition-all flex items-center justify-center gap-2"
-              >
-                <ScanLine className="w-4 h-4 text-emerald-400 animate-pulse" />
-                <span>{isSimulatingScan ? 'Scanning QR Pass...' : scanVerified ? 'Re-Verify Gate Check-in' : 'Simulate Usher Scanner'}</span>
-              </button>
+                  {/* Attendee Credentials Card */}
+                  <div className="p-3.5 bg-slate-950/80 rounded-2xl border border-white/10 text-left text-xs space-y-1.5 font-mono">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 text-[11px]">Pass Code:</span>
+                      <strong className="text-emerald-400 font-extrabold text-sm tracking-wider">{currentPassCode}</strong>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 text-[11px]">Holder:</span>
+                      <strong className="text-white font-bold">{currentUser?.name}</strong>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 text-[11px]">Student ID:</span>
+                      <span className="text-emerald-300">{currentUser?.studentId}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 text-[11px]">Timing:</span>
+                      <span className="text-slate-300 text-[11px]">{activeQrModal.date} ({activeQrModal.startTime} - {activeQrModal.endTime})</span>
+                    </div>
+                  </div>
+
+                  {/* Gate Instructions Notice */}
+                  <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-[10px] text-slate-300 space-y-1 text-left">
+                    <span className="font-bold text-emerald-300 block">Gate Verification Process:</span>
+                    <p className="text-slate-400 leading-relaxed">
+                      Download this QR pass or save it to your phone. At the auditorium/venue entrance, gate moderators and ushers will scan it to verify and log your attendance server-side.
+                    </p>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleDownloadQrTicket(currentPassCode, activeQrModal.title, qrImageUrl)}
+                      disabled={isDownloadingQr}
+                      className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs transition-all shadow-lg flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>{isDownloadingQr ? 'Saving Ticket...' : 'Download QR Ticket'}</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveQrModal(null)}
+                      className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
             </motion.div>
           </div>
         )}
@@ -495,7 +806,7 @@ export const EventHub: React.FC<EventHubProps> = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-              className="glass-panel-glow rounded-3xl max-w-lg w-full p-6 border border-emerald-500/30 shadow-2xl relative z-10 max-h-[90vh] overflow-y-auto space-y-4"
+              className="glass-panel-glow rounded-3xl max-w-lg w-full p-6 border border-emerald-500/30 shadow-2xl relative z-10 max-h-[90vh] overflow-y-auto space-y-4 bg-[#090e18]"
             >
               <div className="flex justify-between items-center border-b border-white/10 pb-3">
                 <div className="flex items-center gap-2">
@@ -592,9 +903,9 @@ export const EventHub: React.FC<EventHubProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1">Date</label>
+                    <label className="font-bold text-slate-300 block mb-1">Event Date</label>
                     <input
                       type="date"
                       value={newDate}
@@ -603,7 +914,19 @@ export const EventHub: React.FC<EventHubProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1">Start</label>
+                    <label className="font-bold text-slate-300 block mb-1">Registration Deadline</label>
+                    <input
+                      type="date"
+                      value={newDeadline}
+                      onChange={(e) => setNewDeadline(e.target.value)}
+                      className="w-full p-2 rounded-xl glass-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Start Time</label>
                     <input
                       type="time"
                       value={newStartTime}
@@ -612,7 +935,7 @@ export const EventHub: React.FC<EventHubProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="font-bold text-slate-300 block mb-1">End</label>
+                    <label className="font-bold text-slate-300 block mb-1">End Time</label>
                     <input
                       type="time"
                       value={newEndTime}
@@ -651,11 +974,3 @@ export const EventHub: React.FC<EventHubProps> = ({
     </div>
   );
 };
-
-function ShieldCheckIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-    </svg>
-  );
-}

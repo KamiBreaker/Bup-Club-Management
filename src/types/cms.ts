@@ -8,7 +8,7 @@ export interface UserProfile {
   batch: string;
   email: string;
   role: UserRole;
-  clubMemberships: { clubId: string; roleName: string; status: 'Active' | 'Pending' }[];
+  clubMemberships: { clubId: string; roleName: string; status: 'Active' | 'Pending' | 'Inactive' }[];
   avatarUrl: string;
 }
 
@@ -29,6 +29,38 @@ export interface Club {
   featuredEventsCount: number;
   budgetAllocated: number;
   status: 'Active' | 'Pending Approval' | 'Inactive';
+  recruitmentOpen?: boolean;
+  recruitmentDeadline?: string;
+  membershipRequirements?: string[];
+  objectives?: string[];
+  achievements?: string[];
+}
+
+export interface MembershipApplication {
+  id: string;
+  clubId: string;
+  clubName: string;
+  userId: string;
+  applicantName: string;
+  studentId: string;
+  department: string;
+  batch: string;
+  email: string;
+  phone?: string;
+  roleName: string;
+  applicationType?: 'Member' | 'Executive' | 'Moderator';
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Action Required';
+  statementOfPurpose: string;
+  skillsInterests: string;
+  applicationDate: string;
+  decisionDate?: string;
+  decisionBy?: string;
+  decisionRemarks?: string;
+  questionPrompt?: string;
+  questionAskedBy?: string;
+  questionDate?: string;
+  studentAnswer?: string;
+  answerDate?: string;
 }
 
 export interface ClubEvent {
@@ -51,6 +83,50 @@ export interface ClubEvent {
   isRSVPAllowed: boolean;
   registeredUserIds: string[];
   attendeeUserIds: string[];
+  registrationDeadline?: string;
+  contactPerson?: string;
+  organizingTeam?: string;
+  requiredEquipment?: string[];
+}
+
+export interface EventRegistration {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  clubName?: string;
+  userId: string;
+  studentId: string;
+  studentName: string;
+  department: string;
+  email: string;
+  passCode: string; // e.g. "BUP-PASS-9042"
+  registrationDate: string;
+  status: 'Confirmed' | 'Cancelled';
+  attended?: boolean;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  eventId: string;
+  eventTitle?: string;
+  userId: string;
+  studentId: string;
+  studentName: string;
+  department?: string;
+  status: 'Present' | 'Absent';
+  markedAt: string;
+  markedBy: string;
+}
+
+export interface ClubAnnouncement {
+  id: string;
+  clubId: string;
+  clubName: string;
+  title: string;
+  content: string;
+  priority: 'Normal' | 'Urgent';
+  createdAt: string;
+  createdBy: string;
 }
 
 export interface Venue {
@@ -83,6 +159,7 @@ export interface VenueBooking {
   conflictReason?: string;
   submittedBy: string;
   reviewedBy?: string;
+  decisionDate?: string;
   createdAt: string;
 }
 
@@ -90,11 +167,16 @@ export interface SystemNotification {
   id: string;
   title: string;
   message: string;
-  type: 'Approval' | 'Reminder' | 'Event' | 'System';
+  type: 'Approval' | 'Reminder' | 'Event' | 'System' | 'Action_Required';
   targetRoles: UserRole[];
   targetUserId?: string;
   read: boolean;
   timestamp: string;
+  actionType?: 'qna_reply' | 'view_application' | 'view_event';
+  applicationId?: string;
+  clubId?: string;
+  clubName?: string;
+  questionPrompt?: string;
 }
 
 export interface AnalyticsSummary {
