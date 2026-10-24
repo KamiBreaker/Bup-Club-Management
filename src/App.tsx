@@ -17,7 +17,8 @@ import {
   MembershipApplication,
   EventRegistration,
   AttendanceRecord,
-  ClubAnnouncement
+  ClubAnnouncement,
+  EventFeedback
 } from './types/cms';
 import {
   INITIAL_USER_PROFILES,
@@ -30,7 +31,8 @@ import {
   INITIAL_APPLICATIONS,
   INITIAL_REGISTRATIONS,
   INITIAL_ATTENDANCE,
-  INITIAL_ANNOUNCEMENTS
+  INITIAL_ANNOUNCEMENTS,
+  INITIAL_EVENT_FEEDBACKS
 } from './data/cmsData';
 import { Header, CmsTabId } from './components/common/Header';
 import { ClubDirectory } from './components/cms/ClubDirectory';
@@ -40,6 +42,7 @@ import { NotificationCenter } from './components/cms/NotificationCenter';
 import { AdminAnalyticsDashboard } from './components/cms/AdminAnalyticsDashboard';
 import { MembershipHub } from './components/cms/MembershipHub';
 import { MyCampusHub } from './components/cms/MyCampusHub';
+import { EventFeedbackHub } from './components/cms/EventFeedbackHub';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { InteractiveBackground } from './components/common/InteractiveBackground';
 import { CommandPalette } from './components/common/CommandPalette';
@@ -58,7 +61,9 @@ import {
   Building,
   KeyRound,
   Zap,
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  Globe
 } from 'lucide-react';
 
 interface AppStateShape {
@@ -73,6 +78,7 @@ interface AppStateShape {
   attendance: AttendanceRecord[];
   announcements: ClubAnnouncement[];
   analytics: AnalyticsSummary;
+  feedbacks: EventFeedback[];
 }
 
 const FALLBACK_INITIAL_STATE: AppStateShape = {
@@ -86,7 +92,8 @@ const FALLBACK_INITIAL_STATE: AppStateShape = {
   registrations: INITIAL_REGISTRATIONS,
   attendance: INITIAL_ATTENDANCE,
   announcements: INITIAL_ANNOUNCEMENTS,
-  analytics: INITIAL_ANALYTICS
+  analytics: INITIAL_ANALYTICS,
+  feedbacks: INITIAL_EVENT_FEEDBACKS
 };
 
 export default function App() {
@@ -106,6 +113,19 @@ export default function App() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authUser, setAuthUser] = useState<UserProfile | null>(null);
+  const [isGuestMode, setIsGuestMode] = useState(false);
+
+  const GUEST_USER: UserProfile = {
+    id: 'GUEST-USER',
+    name: 'Guest Visitor',
+    email: 'guest@bup.edu.bd',
+    role: 'Student',
+    department: 'Campus Visitor',
+    batch: '2026',
+    studentId: 'GUEST',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    clubMemberships: []
+  };
 
   // Command palette & Motion studio states
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -135,7 +155,7 @@ export default function App() {
 
   const [appState, setAppState] = useState<AppStateShape>(FALLBACK_INITIAL_STATE);
 
-  const currentUser = authUser ?? appState.users[0] ?? INITIAL_USER_PROFILES[0];
+  const currentUser = isGuestMode ? GUEST_USER : (authUser ?? appState.users[0] ?? INITIAL_USER_PROFILES[0]);
   const userProfiles = appState.users.length ? appState.users : INITIAL_USER_PROFILES;
   const clubs = appState.clubs.length ? appState.clubs : BUP_CLUBS;
   const events = appState.events.length ? appState.events : BUP_EVENTS;
@@ -147,6 +167,7 @@ export default function App() {
   const attendance = appState.attendance?.length ? appState.attendance : INITIAL_ATTENDANCE;
   const announcements = appState.announcements?.length ? appState.announcements : INITIAL_ANNOUNCEMENTS;
   const analytics = appState.analytics?.totalClubs ? appState.analytics : INITIAL_ANALYTICS;
+  const feedbacks = appState.feedbacks?.length ? appState.feedbacks : INITIAL_EVENT_FEEDBACKS;
 
   const visibleNotifications = useMemo(() => {
     return notifications.filter((n) => {
@@ -192,19 +213,26 @@ export default function App() {
   async function loadSession() {
     setIsAuthLoading(true);
     try {
+      // First attempt to fetch public app state so both guests and signed in users get live database records
+      try {
+        const appResponse = await fetch('/api/app-state', { credentials: 'include' });
+        if (appResponse.ok) {
+          const appData = await appResponse.json();
+          if (appData.state) setAppState(appData.state as AppStateShape);
+        }
+      } catch (appErr) {
+        console.warn('Initial app-state load notice:', appErr);
+      }
+
       const authResponse = await fetch('/api/auth/me', { credentials: 'include' });
       if (!authResponse.ok) {
-        // Fallback check: If local session exists
         setAuthUser(null);
         setIsAuthLoading(false);
         return;
       }
 
       const authData = await authResponse.json();
-      const appResponse = await fetch('/api/app-state', { credentials: 'include' });
-      const appData = await appResponse.json();
       setAuthUser(authData.user as UserProfile);
-      setAppState(appData.state as AppStateShape);
     } catch (error) {
       console.warn('Backend session connect warning:', error);
       setAuthUser(null);
@@ -369,12 +397,30 @@ export default function App() {
     }
   };
 
+  const handleUpdateExecutiveRole = async (clubId: string, studentId: string, designation: string) => {
+    try {
+      await persistState('update-club-executive-role', { clubId, studentId, designation });
+      addToast(`Designation updated to "${designation}"!`, 'success');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to update executive designation.', 'error');
+    }
+  };
+
   const handleRemoveExecutive = async (clubId: string, studentId: string) => {
     try {
       await persistState('remove-club-executive', { clubId, studentId });
       addToast('Executive removed from club roster.', 'info');
     } catch (error: any) {
       addToast(error.message || 'Unable to remove executive.', 'error');
+    }
+  };
+
+  const handleUpdateClub = async (clubId: string, updates: Partial<Club>) => {
+    try {
+      await persistState('update-club', { clubId, updates });
+      addToast('Club details updated successfully!', 'success');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to update club details.', 'error');
     }
   };
 
@@ -423,6 +469,10 @@ export default function App() {
   };
 
   const handleCreateEvent = async (newEventData: Partial<ClubEvent>) => {
+    if (selectedRole === 'Student') {
+      addToast('Students do not have permission to publish events.', 'error');
+      return;
+    }
     try {
       await persistState('create-event', newEventData);
     } catch (error: any) {
@@ -430,7 +480,20 @@ export default function App() {
     }
   };
 
+  const handleUpdateEvent = async (eventId: string, updates: Partial<ClubEvent>) => {
+    try {
+      await persistState('update-event', { eventId, updates });
+      addToast('Event updated and attendees synchronized!', 'success');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to update event.', 'error');
+    }
+  };
+
   const handleDeleteEvent = async (eventId: string) => {
+    if (selectedRole === 'Student') {
+      addToast('Students do not have permission to delete events.', 'error');
+      return;
+    }
     try {
       await persistState('delete-event', { eventId });
       addToast('Event removed from campus calendar.', 'info');
@@ -439,7 +502,34 @@ export default function App() {
     }
   };
 
+  const handleSubmitFeedback = async (
+    eventId: string,
+    rating: number,
+    comment: string,
+    category: 'Organization' | 'Content' | 'Venue & Hospitality' | 'General' = 'General'
+  ) => {
+    try {
+      await persistState('submit-event-feedback', { eventId, rating, comment, category });
+      addToast('Thank you! Your verified event review was published.', 'success');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to submit feedback.', 'error');
+    }
+  };
+
+  const handleDeleteFeedback = async (feedbackId: string) => {
+    try {
+      await persistState('delete-event-feedback', { feedbackId });
+      addToast('Event feedback review removed.', 'info');
+    } catch (error: any) {
+      addToast(error.message || 'Unable to delete feedback.', 'error');
+    }
+  };
+
   const handleCreateClub = async (newClubData: Partial<Club>) => {
+    if (selectedRole !== 'System_Admin') {
+      addToast('Only System Administrators can charter new societies.', 'error');
+      return;
+    }
     try {
       await persistState('create-club', newClubData);
       addToast(`Society "${newClubData.name}" chartered successfully!`, 'success');
@@ -449,6 +539,10 @@ export default function App() {
   };
 
   const handleDeleteClub = async (clubId: string) => {
+    if (selectedRole !== 'System_Admin') {
+      addToast('Only System Administrators can dissolve societies.', 'error');
+      return;
+    }
     try {
       await persistState('delete-club', { clubId });
       addToast('Society and associated records permanently removed.', 'info');
@@ -521,7 +615,7 @@ export default function App() {
   }
 
   // Welcome Gate / Sign-In Screen
-  if (!currentUser || !authUser) {
+  if (!isGuestMode && (!currentUser || !authUser)) {
     return (
       <ErrorBoundary fallbackTitle="Authentication Shield Active">
         <div className="bup-auth min-h-screen text-slate-100 flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
@@ -553,39 +647,71 @@ export default function App() {
               </p>
             </div>
 
-            {/* Clean System Administrator Access */}
-            <div className="p-4 rounded-2xl bg-slate-950/80 border border-white/10 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Fresh Start • Default Administrator</span>
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">admin@bup.edu.bd</span>
+            {/* Quick Access Grid: System Admin & Guest Explorer */}
+            <div className="space-y-2.5">
+              {/* Clean System Administrator Access */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Administrative Access</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">admin@bup.edu.bd</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleQuickDemoLogin('System_Admin')}
+                  disabled={isSubmitting}
+                  className="w-full p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-slate-900 hover:from-emerald-500/25 hover:to-slate-800 border border-emerald-500/30 text-left transition-all text-xs group flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-sm border border-emerald-500/40">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="font-extrabold text-white group-hover:text-emerald-300">
+                        Sign in as System Administrator
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        Full club roster, event rescheduling & executive appointment rights
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-3 py-1 rounded-lg bg-emerald-400 text-slate-950 font-black text-xs shadow">
+                    1-Click →
+                  </span>
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin('System_Admin')}
-                disabled={isSubmitting}
-                className="w-full p-3 rounded-xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-slate-900 hover:from-emerald-500/25 hover:to-slate-800 border border-emerald-500/30 text-left transition-all text-xs group flex items-center justify-between cursor-pointer"
-              >
+              {/* Guest / Visitor Read-Only Mode */}
+              <div className="p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/20 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold text-sm border border-emerald-500/40">
-                    <ShieldCheck className="w-5 h-5" />
+                  <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold text-xs border border-cyan-500/30 shrink-0">
+                    <Eye className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="font-extrabold text-white group-hover:text-emerald-300">
-                      Sign in as System Administrator
+                    <p className="font-bold text-white text-xs">
+                      Public Guest View (No Login Required)
                     </p>
-                    <p className="text-[10px] text-slate-400 font-mono">
-                      admin@bup.edu.bd • Password: admin123
+                    <p className="text-[10px] text-slate-300">
+                      Browse club directories, upcoming events, and verified student feedback reviews
                     </p>
                   </div>
                 </div>
-                <span className="px-3 py-1 rounded-lg bg-emerald-400 text-slate-950 font-black text-xs shadow">
-                  1-Click Access →
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playSuccess();
+                    setIsGuestMode(true);
+                    setSelectedRole('Student');
+                    addToast('Welcome! Exploring BUP Portal in Guest Mode.', 'info');
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-500 text-slate-950 font-black text-xs transition-all shrink-0 cursor-pointer shadow-md hover:scale-102"
+                >
+                  Explore as Guest →
+                </button>
+              </div>
             </div>
 
             {/* Custom Credentials Form */}
@@ -738,6 +864,8 @@ export default function App() {
           currentUser={currentUser}
           unreadNotificationsCount={unreadNotificationsCount}
           pendingApplicationsCount={pendingApplicationsCount}
+          isGuest={isGuestMode}
+          onSignInClick={() => setIsGuestMode(false)}
           onLogout={handleLogout}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           onOpenMotionSettings={() => setIsMotionSettingsOpen(true)}
@@ -766,6 +894,11 @@ export default function App() {
                       onLeaveClub={handleLeaveClub}
                       onCreateClub={handleCreateClub}
                       onDeleteClub={handleDeleteClub}
+                      onUpdateClub={handleUpdateClub}
+                      onAppointExecutive={handleAppointExecutive}
+                      onRemoveExecutive={handleRemoveExecutive}
+                      isGuest={isGuestMode}
+                      onRequireAuth={() => setIsGuestMode(false)}
                     />
                   </ErrorBoundary>
                 </motion.div>
@@ -788,10 +921,40 @@ export default function App() {
                       selectedRole={selectedRole}
                       registrations={registrations}
                       attendance={attendance}
+                      feedbacks={feedbacks}
+                      isGuest={isGuestMode}
                       onRSVP={handleRSVP}
                       onCreateEvent={handleCreateEvent}
+                      onUpdateEvent={handleUpdateEvent}
                       onRecordAttendance={handleRecordAttendance}
                       onDeleteEvent={handleDeleteEvent}
+                      onOpenFeedbacks={(eventId) => setActiveCmsTab('feedbacks')}
+                      onRequireAuth={() => setIsGuestMode(false)}
+                    />
+                  </ErrorBoundary>
+                </motion.div>
+              )}
+
+              {activeCmsTab === 'feedbacks' && (
+                <motion.div
+                  key="feedbacks"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  transition={{ duration: 0.25 * (1 / motionSettings.speed) }}
+                >
+                  <ErrorBoundary fallbackTitle="Event Feedbacks Hub">
+                    <EventFeedbackHub
+                      feedbacks={feedbacks}
+                      events={events}
+                      clubs={clubs}
+                      currentUser={currentUser}
+                      selectedRole={selectedRole}
+                      registrations={registrations}
+                      isGuest={isGuestMode}
+                      onSubmitFeedback={handleSubmitFeedback}
+                      onDeleteFeedback={handleDeleteFeedback}
+                      onRequireAuth={() => setIsGuestMode(false)}
                     />
                   </ErrorBoundary>
                 </motion.div>
@@ -840,6 +1003,7 @@ export default function App() {
                       onApplyForClub={() => setActiveCmsTab('clubs')}
                       onAppointExecutive={handleAppointExecutive}
                       onRemoveExecutive={handleRemoveExecutive}
+                      onUpdateExecutiveRole={handleUpdateExecutiveRole}
                     />
                   </ErrorBoundary>
                 </motion.div>

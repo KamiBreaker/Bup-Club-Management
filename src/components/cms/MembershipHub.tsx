@@ -35,7 +35,8 @@ import {
   AlertTriangle,
   Award,
   UserPlus,
-  Trash2
+  Trash2,
+  Edit3
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -51,6 +52,7 @@ interface MembershipHubProps {
   onApplyForClub?: (clubId?: string) => void;
   onAppointExecutive?: (clubId: string, targetUserId: string, designation: string) => Promise<void> | void;
   onRemoveExecutive?: (clubId: string, studentId: string) => Promise<void> | void;
+  onUpdateExecutiveRole?: (clubId: string, studentId: string, designation: string) => Promise<void> | void;
 }
 
 export const MembershipHub: React.FC<MembershipHubProps> = ({
@@ -64,7 +66,8 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
   onRespondQna,
   onApplyForClub,
   onAppointExecutive,
-  onRemoveExecutive
+  onRemoveExecutive,
+  onUpdateExecutiveRole
 }) => {
   const [activeTab, setActiveTab] = useState<'applications' | 'roster' | 'my-applications'>('applications');
   const [selectedClubId, setSelectedClubId] = useState<string>('All');
@@ -691,7 +694,7 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
                 </p>
               </div>
 
-              {(currentUser.role === 'System_Admin' || isExecutiveOrAdmin) && onAppointExecutive && (
+              {isExecutiveOrAdmin && onAppointExecutive && (
                 <button
                   type="button"
                   onClick={() => {
@@ -736,7 +739,7 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
                           <p className="text-xs text-slate-400">
                             No executives or moderators assigned for {club.code} yet.
                           </p>
-                          {(currentUser.role === 'System_Admin' || isExecutiveOrAdmin) && (
+                          {isExecutiveOrAdmin && (
                             <button
                               type="button"
                               onClick={() => {
@@ -773,20 +776,38 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
                                 </div>
                               </div>
 
-                              {currentUser.role === 'System_Admin' && onRemoveExecutive && (
-                                <button
-                                  type="button"
-                                  title="Remove from Executive Roster"
-                                  onClick={() => {
-                                    if (confirm(`Remove ${exec.name} from ${club.name} executive committee?`)) {
-                                      onRemoveExecutive(club.id, exec.studentId);
-                                    }
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all cursor-pointer shrink-0"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                {(selectedRole === 'System_Admin' || isModeratorForClub(club.id)) && onUpdateExecutiveRole && (
+                                  <button
+                                    type="button"
+                                    title="Edit Executive Designation"
+                                    onClick={() => {
+                                      const newRole = prompt(`Update role/designation for ${exec.name} in ${club.name}:`, exec.designation);
+                                      if (newRole && newRole.trim() && newRole.trim() !== exec.designation) {
+                                        onUpdateExecutiveRole(club.id, exec.studentId, newRole.trim());
+                                      }
+                                    }}
+                                    className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition-all cursor-pointer"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {(selectedRole === 'System_Admin' || isModeratorForClub(club.id)) && onRemoveExecutive && (
+                                  <button
+                                    type="button"
+                                    title="Remove from Executive Roster"
+                                    onClick={() => {
+                                      if (confirm(`Remove ${exec.name} from ${club.name} executive committee?`)) {
+                                        onRemoveExecutive(club.id, exec.studentId);
+                                      }
+                                    }}
+                                    className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>

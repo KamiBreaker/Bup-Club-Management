@@ -9,7 +9,8 @@ import {
   MembershipApplication,
   EventRegistration,
   AttendanceRecord,
-  ClubAnnouncement
+  ClubAnnouncement,
+  EventFeedback
 } from '../types/cms';
 
 export const INITIAL_USER_PROFILES: UserProfile[] = [
@@ -298,3 +299,51 @@ export const INITIAL_REGISTRATIONS: EventRegistration[] = [];
 export const INITIAL_ATTENDANCE: AttendanceRecord[] = [];
 
 export const INITIAL_ANNOUNCEMENTS: ClubAnnouncement[] = [];
+
+export const INITIAL_EVENT_FEEDBACKS: EventFeedback[] = [
+  {
+    id: 'FB-01',
+    eventId: 'EVT-101',
+    eventTitle: 'BUP RoboFest: Autonomous Line Follower & AI Bot Battle',
+    clubId: 'CLUB-02',
+    clubName: 'BUP Robotics & Research Club',
+    userId: 'USR-STU-01',
+    studentName: 'Tahmid Hasan',
+    studentId: '22041014',
+    department: 'Dept of ICE',
+    rating: 5,
+    category: 'Organization',
+    comment: 'The track calibration and technical team support was top-notch! The live telemetry display in the Multipurpose Hall was incredible.',
+    createdAt: '2026-10-12 14:30'
+  },
+  {
+    id: 'FB-02',
+    eventId: 'EVT-101',
+    eventTitle: 'BUP RoboFest: Autonomous Line Follower & AI Bot Battle',
+    clubId: 'CLUB-02',
+    clubName: 'BUP Robotics & Research Club',
+    userId: 'USR-STU-02',
+    studentName: 'Nafisa Chowdhury',
+    studentId: '23041045',
+    department: 'Dept of CSE',
+    rating: 5,
+    category: 'Content',
+    comment: 'Learned so much about PID tuning and LiDAR obstacle sensors. Great judging panel and very fair scoring rules.',
+    createdAt: '2026-10-14 11:20'
+  },
+  {
+    id: 'FB-03',
+    eventId: 'EVT-102',
+    eventTitle: 'Aalor Kolotan: Campus Cultural Evening & Musical Drama',
+    clubId: 'CLUB-01',
+    clubName: 'BUP Cultural Forum',
+    userId: 'USR-STU-03',
+    studentName: 'Sadman Sakib',
+    studentId: '21041088',
+    department: 'Dept of BBA',
+    rating: 4,
+    category: 'Venue & Hospitality',
+    comment: 'The stage lighting and acoustic ambiance at Plaza Auditorium was mesmerizing. Looking forward to the next campus musical night!',
+    createdAt: '2026-10-15 19:45'
+  }
+];

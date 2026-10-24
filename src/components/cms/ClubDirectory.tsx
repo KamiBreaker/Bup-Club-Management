@@ -30,7 +30,10 @@ import {
   AlertTriangle,
   Building2,
   DollarSign,
-  Layers
+  Layers,
+  Edit3,
+  Edit2,
+  LogIn
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -39,6 +42,7 @@ interface ClubDirectoryProps {
   currentUser: UserProfile;
   selectedRole: UserRole;
   applications?: MembershipApplication[];
+  isGuest?: boolean;
   onApplyForMembership: (
     clubId: string,
     form: {
@@ -53,6 +57,10 @@ interface ClubDirectoryProps {
   onLeaveClub: (clubId: string) => void;
   onCreateClub?: (clubData: Partial<Club>) => void;
   onDeleteClub?: (clubId: string) => void;
+  onUpdateClub?: (clubId: string, updatedData: Partial<Club>) => Promise<void> | void;
+  onAppointExecutive?: (clubId: string, targetUserId: string, designation: string) => Promise<void> | void;
+  onRemoveExecutive?: (clubId: string, studentId: string) => Promise<void> | void;
+  onRequireAuth?: () => void;
 }
 
 export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
@@ -60,19 +68,106 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
   currentUser,
   selectedRole,
   applications = [],
+  isGuest = false,
   onApplyForMembership,
   onJoinClub,
   onLeaveClub,
   onCreateClub,
-  onDeleteClub
+  onDeleteClub,
+  onUpdateClub,
+  onAppointExecutive,
+  onRemoveExecutive,
+  onRequireAuth
 }) => {
-  const isSystemAdmin = selectedRole === 'System_Admin' || currentUser?.role === 'System_Admin';
+  const isSystemAdmin = selectedRole === 'System_Admin';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [activeClubModal, setActiveClubModal] = useState<Club | null>(null);
   const [applyingClub, setApplyingClub] = useState<Club | null>(null);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+
+  // Helper to check if current user has moderator/editing authority for a club
+  const isModeratorForClub = (clubId: string) => {
+    if (selectedRole === 'System_Admin' || selectedRole === 'Faculty_Advisor') return true;
+    if (selectedRole === 'Club_Exec') {
+      const isMemberExec =
+        Array.isArray(currentUser?.clubMemberships) &&
+        currentUser.clubMemberships.some((m) => m.clubId === clubId && m.status === 'Active');
+      const isListedExec = ((clubs ?? []).find((c) => c.id === clubId)?.executives || []).some(
+        (e) => e.studentId === currentUser?.studentId || e.name === currentUser?.name
+      );
+      return isMemberExec || isListedExec;
+    }
+    return false;
+  };
+
+  // Club Editing & Advisory Change State
+  const [editingClub, setEditingClub] = useState<Club | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editTagline, setEditTagline] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editCategory, setEditCategory] = useState<'Cultural' | 'Technical' | 'Business' | 'Sports' | 'Academic' | 'Social Work'>('Technical');
+  const [editDept, setEditDept] = useState('');
+  const [editAdvisorName, setEditAdvisorName] = useState('');
+  const [editAdvisorDesignation, setEditAdvisorDesignation] = useState('');
+  const [editAdvisorEmail, setEditAdvisorEmail] = useState('');
+  const [editBudget, setEditBudget] = useState(50000);
+  const [editRecruitmentOpen, setEditRecruitmentOpen] = useState(true);
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editObjectives, setEditObjectives] = useState('');
+  const [editAchievements, setEditAchievements] = useState('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+  const handleOpenEditClub = (club: Club) => {
+    soundFx.playClick();
+    setEditingClub(club);
+    setEditName(club.name);
+    setEditTagline(club.tagline || '');
+    setEditDescription(club.description || '');
+    setEditCategory(club.category);
+    setEditDept(club.department || '');
+    setEditAdvisorName(club.facultyAdvisor?.name || '');
+    setEditAdvisorDesignation(club.facultyAdvisor?.designation || '');
+    setEditAdvisorEmail(club.facultyAdvisor?.email || '');
+    setEditBudget(club.budgetAllocated || 0);
+    setEditRecruitmentOpen(club.recruitmentOpen !== false);
+    setEditDeadline(club.recruitmentDeadline || '');
+    setEditObjectives((club.objectives || []).join('\n'));
+    setEditAchievements((club.achievements || []).join('\n'));
+  };
+
+  const handleSaveClubEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClub || !onUpdateClub) return;
+    setIsSubmittingEdit(true);
+    soundFx.playClick(850);
+    try {
+      await onUpdateClub(editingClub.id, {
+        name: editName.trim(),
+        tagline: editTagline.trim(),
+        description: editDescription.trim(),
+        category: editCategory,
+        department: editDept.trim(),
+        facultyAdvisor: {
+          name: editAdvisorName.trim(),
+          designation: editAdvisorDesignation.trim(),
+          email: editAdvisorEmail.trim()
+        },
+        budgetAllocated: editBudget,
+        recruitmentOpen: editRecruitmentOpen,
+        recruitmentDeadline: editDeadline,
+        objectives: editObjectives.split('\n').map((s) => s.trim()).filter(Boolean),
+        achievements: editAchievements.split('\n').map((s) => s.trim()).filter(Boolean)
+      });
+      soundFx.playSuccess();
+      setEditingClub(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update club.');
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
 
   // System Admin Society Management State
   const [isCreateClubModalOpen, setIsCreateClubModalOpen] = useState(false);
@@ -383,6 +478,19 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                     <span className="bg-slate-950/85 text-emerald-300 text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
                       {club.code}
                     </span>
+                    {isModeratorForClub(club.id) && onUpdateClub && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEditClub(club);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-950/90 hover:bg-emerald-950 text-emerald-300 hover:text-white border border-emerald-500/40 transition-all cursor-pointer shadow-md"
+                        title={`Edit Society & Advisor: ${club.name}`}
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {isSystemAdmin && onDeleteClub && (
                       <button
                         type="button"
@@ -432,7 +540,36 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                     {club.description}
                   </p>
 
-                  <div className="pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                  {/* Faculty Advisor Row on Club Card */}
+                  <div className="p-2.5 rounded-2xl bg-slate-950/50 border border-white/5 flex items-center justify-between text-[11px] gap-2">
+                    <div className="min-w-0">
+                      <span className="text-[10px] text-slate-400 block font-mono">Faculty Advisor</span>
+                      <span className="text-white font-bold truncate block">
+                        {club.facultyAdvisor?.name ? club.facultyAdvisor.name : 'No Advisor Assigned'}
+                      </span>
+                      {club.facultyAdvisor?.designation && (
+                        <span className="text-[10px] text-slate-400 block truncate">
+                          {club.facultyAdvisor.designation}
+                        </span>
+                      )}
+                    </div>
+                    {isModeratorForClub(club.id) && onUpdateClub && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEditClub(club);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1 text-[10px] shrink-0 cursor-pointer"
+                        title="Edit Advisor & Society"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400 font-medium">
                     <span className="flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-emerald-400" />
                       <strong className="text-white font-mono">{club.memberCount}</strong> Members
@@ -829,59 +966,117 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                 </div>
 
                 {/* Faculty Advisor */}
-                {activeClubModal.facultyAdvisor && (
-                  <div className="p-4 rounded-2xl bg-slate-900/80 border border-emerald-500/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                    <div>
-                      <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
-                        Faculty Advisor
-                      </span>
-                      <p className="text-xs font-bold text-white mt-0.5">
-                        {activeClubModal.facultyAdvisor.name}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        {activeClubModal.facultyAdvisor.designation}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={() => handleCopyEmail(activeClubModal.facultyAdvisor.email)}
-                      className="flex items-center gap-1.5 text-[11px] font-mono bg-emerald-950/80 text-emerald-300 px-3 py-1.5 rounded-xl border border-emerald-500/30 hover:bg-emerald-900 transition-colors"
-                    >
-                      <Mail className="w-3.5 h-3.5" />
-                      <span>{activeClubModal.facultyAdvisor.email}</span>
-                      {copiedEmail === activeClubModal.facultyAdvisor.email ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3 h-3 text-slate-400" />
-                      )}
-                    </button>
+                <div className="p-4 rounded-2xl bg-slate-900/80 border border-emerald-500/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
+                      Faculty Advisor
+                    </span>
+                    <p className="text-xs font-bold text-white mt-0.5">
+                      {activeClubModal.facultyAdvisor?.name || 'No Faculty Advisor Designated'}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {activeClubModal.facultyAdvisor?.designation || 'Tap Edit to appoint a department advisor'}
+                    </p>
                   </div>
-                )}
+
+                  <div className="flex items-center gap-2">
+                    {activeClubModal.facultyAdvisor?.email && (
+                      <button
+                        onClick={() => handleCopyEmail(activeClubModal.facultyAdvisor.email)}
+                        className="flex items-center gap-1.5 text-[11px] font-mono bg-emerald-950/80 text-emerald-300 px-3 py-1.5 rounded-xl border border-emerald-500/30 hover:bg-emerald-900 transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>{activeClubModal.facultyAdvisor.email}</span>
+                        {copiedEmail === activeClubModal.facultyAdvisor.email ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3 h-3 text-slate-400" />
+                        )}
+                      </button>
+                    )}
+
+                    {isModeratorForClub(activeClubModal.id) && onUpdateClub && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditClub(activeClubModal)}
+                        className="flex items-center gap-1 text-[11px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold px-3 py-1.5 rounded-xl border border-emerald-500/40 transition cursor-pointer"
+                        title="Edit Faculty Advisor"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit Advisor</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
 
                 {/* Executive Roster */}
                 <div>
-                  <h4 className="font-bold text-emerald-400 uppercase tracking-wider text-[11px] mb-3">
-                    Executive Committee Roster
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {(activeClubModal.executives ?? []).map((exec, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900/60 border border-white/10"
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-bold text-emerald-400 uppercase tracking-wider text-[11px]">
+                      Executive Committee Roster
+                    </h4>
+                    {isModeratorForClub(activeClubModal.id) && onUpdateClub && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditClub(activeClubModal)}
+                        className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer"
                       >
-                        <img
-                          src={exec.avatar}
-                          alt={exec.name}
-                          className="w-11 h-11 rounded-xl object-cover ring-1 ring-white/10 bg-slate-800"
-                        />
-                        <div className="min-w-0">
-                          <p className="font-bold text-white text-xs truncate">{exec.name}</p>
-                          <p className="text-[10px] text-emerald-400 font-semibold">{exec.designation}</p>
-                          <p className="text-[10px] text-slate-400 font-mono">ID: {exec.studentId}</p>
-                        </div>
-                      </div>
-                    ))}
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit Society Details</span>
+                      </button>
+                    )}
                   </div>
+
+                  {(activeClubModal.executives ?? []).length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-slate-950/40 border border-dashed border-white/10 text-center text-xs text-slate-400">
+                      No designated executive officers or moderators assigned yet.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {(activeClubModal.executives ?? []).map((exec, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/60 border border-white/10 group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <img
+                              src={exec.avatar}
+                              alt={exec.name}
+                              className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10 bg-slate-800 shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <p className="font-bold text-white text-xs truncate">{exec.name}</p>
+                              <p className="text-[10px] text-emerald-400 font-semibold truncate">{exec.designation}</p>
+                              <p className="text-[10px] text-slate-400 font-mono truncate">ID: {exec.studentId}</p>
+                            </div>
+                          </div>
+
+                          {isModeratorForClub(activeClubModal.id) && onRemoveExecutive && (
+                            <button
+                              type="button"
+                              title="Remove from Executive Committee"
+                              onClick={() => {
+                                if (confirm(`Remove ${exec.name} from the executive panel of ${activeClubModal.name}?`)) {
+                                  onRemoveExecutive(activeClubModal.id, exec.studentId);
+                                  setActiveClubModal((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          executives: prev.executives.filter((e) => e.studentId !== exec.studentId)
+                                        }
+                                      : null
+                                  );
+                                }
+                              }}
+                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition cursor-pointer shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Modal Action Footer */}
@@ -1266,6 +1461,252 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                   <span>Decommission & Delete</span>
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* EDIT CLUB DETAILS & FACULTY ADVISOR MODAL */}
+      <AnimatePresence>
+        {editingClub && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingClub(null)}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="glass-panel rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-emerald-500/40 shadow-2xl relative z-10 p-6 sm:p-7 space-y-5 bg-[#0a101b]"
+            >
+              <div className="flex justify-between items-center border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <Edit3 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider">
+                      Society Governance & Leadership
+                    </span>
+                    <h3 className="text-lg font-black text-white font-heading">
+                      Edit Club Profile & Advisory Board
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEditingClub(null)}
+                  className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveClubEdit} className="space-y-4 text-xs">
+                {/* SECTION 1: FACULTY ADVISOR */}
+                <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-300 font-bold uppercase tracking-wider text-[11px]">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Faculty Advisor Appointment & Information</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-300 block mb-1 font-semibold">
+                        Advisor Full Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={editAdvisorName}
+                        onChange={(e) => setEditAdvisorName(e.target.value)}
+                        placeholder="e.g. Dr. Mohammad Mahfuzur Rahman"
+                        className="w-full p-2.5 rounded-xl glass-input text-white focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-300 block mb-1 font-semibold">
+                        Designation & Department *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={editAdvisorDesignation}
+                        onChange={(e) => setEditAdvisorDesignation(e.target.value)}
+                        placeholder="e.g. Professor & Dean, Dept. of ICE"
+                        className="w-full p-2.5 rounded-xl glass-input text-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-300 block mb-1 font-semibold">
+                      Institutional Advisor Email (@bup.edu.bd) *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={editAdvisorEmail}
+                      onChange={(e) => setEditAdvisorEmail(e.target.value)}
+                      placeholder="e.g. advisor.ice@bup.edu.bd"
+                      className="w-full p-2.5 rounded-xl glass-input text-emerald-300 font-mono focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* SECTION 2: CLUB PROFILE DETAILS */}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-slate-300 block mb-1 font-semibold">Society Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-full p-2.5 rounded-xl glass-input text-white focus:outline-none font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-slate-300 block mb-1 font-semibold">Category</label>
+                      <select
+                        value={editCategory}
+                        onChange={(e) => setEditCategory(e.target.value as any)}
+                        className="w-full p-2.5 rounded-xl glass-input text-white focus:outline-none cursor-pointer"
+                      >
+                        {categories.filter((c) => c !== 'All').map((cat) => (
+                          <option key={cat} value={cat} className="bg-slate-950">
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-300 block mb-1 font-semibold">Tagline / Motto</label>
+                    <input
+                      type="text"
+                      value={editTagline}
+                      onChange={(e) => setEditTagline(e.target.value)}
+                      className="w-full p-2.5 rounded-xl glass-input text-emerald-300 italic focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-300 block mb-1 font-semibold">Description</label>
+                    <textarea
+                      rows={3}
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      className="w-full p-3 rounded-xl glass-input text-slate-200 focus:outline-none resize-none leading-relaxed"
+                    />
+                  </div>
+                </div>
+
+                {/* SECTION 3: RECRUITMENT SETTINGS & BUDGET */}
+                <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-white block">Recruitment Status</span>
+                      <span className="text-[11px] text-slate-400">Enable or close open student recruitment</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditRecruitmentOpen(!editRecruitmentOpen)}
+                      className={`px-3 py-1.5 rounded-xl font-black text-xs transition cursor-pointer border ${
+                        editRecruitmentOpen
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-800 text-slate-400 border-white/10'
+                      }`}
+                    >
+                      {editRecruitmentOpen ? '✓ Recruitment Active' : '✕ Recruitment Closed'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="text-slate-300 block mb-1 font-semibold">Recruitment Deadline</label>
+                      <input
+                        type="date"
+                        value={editDeadline}
+                        onChange={(e) => setEditDeadline(e.target.value)}
+                        className="w-full p-2.5 rounded-xl glass-input text-white focus:outline-none"
+                      />
+                    </div>
+
+                    {isSystemAdmin && (
+                      <div>
+                        <label className="text-slate-300 block mb-1 font-semibold">Annual Budget (BDT)</label>
+                        <input
+                          type="number"
+                          value={editBudget}
+                          onChange={(e) => setEditBudget(Number(e.target.value))}
+                          className="w-full p-2.5 rounded-xl glass-input text-amber-300 font-mono focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* SECTION 4: OBJECTIVES & ACHIEVEMENTS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-300 block mb-1 font-semibold">
+                      Objectives (One per line)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={editObjectives}
+                      onChange={(e) => setEditObjectives(e.target.value)}
+                      placeholder="e.g. Conduct hands-on workshops&#10;Organize national competitions"
+                      className="w-full p-2.5 rounded-xl glass-input text-slate-200 text-xs focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-300 block mb-1 font-semibold">
+                      Key Achievements (One per line)
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={editAchievements}
+                      onChange={(e) => setEditAchievements(e.target.value)}
+                      placeholder="e.g. Champion in National Tech Fest&#10;Hosted 20+ campus sessions"
+                      className="w-full p-2.5 rounded-xl glass-input text-slate-200 text-xs focus:outline-none resize-none"
+                    />
+                  </div>
+                </div>
+
+                {/* ACTION BUTTONS */}
+                <div className="pt-3 border-t border-white/10 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingClub(null)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingEdit}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs transition shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{isSubmittingEdit ? 'Saving Changes...' : 'Save & Publish Updates'}</span>
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

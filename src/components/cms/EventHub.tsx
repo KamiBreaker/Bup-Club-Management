@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { ClubEvent, Club, Venue, UserProfile, UserRole, EventRegistration, AttendanceRecord } from '../../types/cms';
+import { ClubEvent, Club, Venue, UserProfile, UserRole, EventRegistration, AttendanceRecord, EventFeedback } from '../../types/cms';
 import {
   Calendar,
   Clock,
@@ -24,7 +24,11 @@ import {
   ShieldCheck,
   UserCheck,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Edit3,
+  Star,
+  MessageSquare,
+  Lock
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -36,10 +40,15 @@ interface EventHubProps {
   selectedRole: UserRole;
   registrations?: EventRegistration[];
   attendance?: AttendanceRecord[];
+  feedbacks?: EventFeedback[];
+  isGuest?: boolean;
   onRSVP: (eventId: string) => void;
   onCreateEvent: (newEvent: Partial<ClubEvent>) => void;
+  onUpdateEvent?: (eventId: string, updates: Partial<ClubEvent>) => void;
   onRecordAttendance?: (eventId: string, studentId?: string, passCode?: string) => void;
   onDeleteEvent?: (eventId: string) => void;
+  onOpenFeedbacks?: (eventId?: string) => void;
+  onRequireAuth?: () => void;
 }
 
 export const EventHub: React.FC<EventHubProps> = ({
@@ -50,10 +59,15 @@ export const EventHub: React.FC<EventHubProps> = ({
   selectedRole,
   registrations = [],
   attendance = [],
+  feedbacks = [],
+  isGuest = false,
   onRSVP,
   onCreateEvent,
+  onUpdateEvent,
   onRecordAttendance,
-  onDeleteEvent
+  onDeleteEvent,
+  onOpenFeedbacks,
+  onRequireAuth
 }) => {
   const [activeTab, setActiveTab] = useState<'All' | 'Upcoming' | 'Registered'>('All');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -62,6 +76,20 @@ export const EventHub: React.FC<EventHubProps> = ({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDownloadingQr, setIsDownloadingQr] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<ClubEvent | null>(null);
+
+  // Edit / Reschedule Modal State
+  const [eventToEdit, setEventToEdit] = useState<ClubEvent | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState<'Workshop' | 'Competition' | 'Cultural' | 'Seminar' | 'Recruitment' | 'Training'>('Workshop');
+  const [editDescription, setEditDescription] = useState('');
+  const [editPosterUrl, setEditPosterUrl] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+  const [editVenueId, setEditVenueId] = useState('');
+  const [editMaxSeats, setEditMaxSeats] = useState(150);
+  const [editStatus, setEditStatus] = useState<'Upcoming' | 'Ongoing' | 'Completed' | 'Cancelled'>('Upcoming');
+  const [editDeadline, setEditDeadline] = useState('');
 
   // Live Usher Check-in input
   const [checkInInput, setCheckInInput] = useState('');
@@ -84,14 +112,101 @@ export const EventHub: React.FC<EventHubProps> = ({
   const categories = ['All', 'Workshop', 'Competition', 'Cultural', 'Seminar', 'Recruitment', 'Training'];
 
   const isExecutiveOrAdmin =
-    selectedRole === 'Club_Exec' ||
-    selectedRole === 'Faculty_Advisor' ||
-    selectedRole === 'System_Admin';
+    !isGuest &&
+    (selectedRole === 'Club_Exec' ||
+      selectedRole === 'Faculty_Advisor' ||
+      selectedRole === 'System_Admin');
+
+  const canEditEvent = (event: ClubEvent) => {
+    if (isGuest) return false;
+    if (selectedRole === 'System_Admin' || selectedRole === 'Faculty_Advisor') return true;
+
+    if (selectedRole === 'Club_Exec') {
+      const isMemberExec =
+        Array.isArray(currentUser?.clubMemberships) &&
+        currentUser.clubMemberships.some((m) => m.clubId === event.clubId && m.status === 'Active');
+      const isListedExec = ((clubs ?? []).find((c) => c.id === event.clubId)?.executives || []).some(
+        (e) => e.studentId === currentUser?.studentId || e.name === currentUser?.name
+      );
+      const isSimulatedByAdmin = currentUser?.role === 'System_Admin';
+      return isMemberExec || isListedExec || isSimulatedByAdmin;
+    }
+
+    return false;
+  };
+
+  const canDeleteEvent = (event: ClubEvent) => {
+    if (isGuest) return false;
+    // Only System Administrator in System Admin view has site-wide event deletion privileges
+    if (selectedRole === 'System_Admin') return true;
+
+    // Club Executives can delete events for their accredited club
+    if (selectedRole === 'Club_Exec') {
+      const isMemberExec =
+        Array.isArray(currentUser?.clubMemberships) &&
+        currentUser.clubMemberships.some((m) => m.clubId === event.clubId && m.status === 'Active');
+      const isListedExec = ((clubs ?? []).find((c) => c.id === event.clubId)?.executives || []).some(
+        (e) => e.studentId === currentUser?.studentId || e.name === currentUser?.name
+      );
+      const isSimulatedByAdmin = currentUser?.role === 'System_Admin';
+      return isMemberExec || isListedExec || isSimulatedByAdmin;
+    }
+
+    // Students and all other perspectives strictly cannot delete events
+    return false;
+  };
+
+  const getEventRatingStats = (eventId: string) => {
+    const eventFbs = (feedbacks ?? []).filter((f) => f.eventId === eventId);
+    if (eventFbs.length === 0) return { avg: null, count: 0 };
+    const sum = eventFbs.reduce((acc, f) => acc + f.rating, 0);
+    return { avg: (sum / eventFbs.length).toFixed(1), count: eventFbs.length };
+  };
+
+  const openEditModal = (evt: ClubEvent) => {
+    setEventToEdit(evt);
+    setEditTitle(evt.title);
+    setEditCategory(evt.category as any);
+    setEditDescription(evt.description);
+    setEditPosterUrl(evt.posterUrl);
+    setEditDate(evt.date);
+    setEditStartTime(evt.startTime);
+    setEditEndTime(evt.endTime);
+    setEditVenueId(evt.venueId);
+    setEditMaxSeats(evt.maxSeats || 100);
+    setEditStatus(evt.status || 'Upcoming');
+    setEditDeadline(evt.registrationDeadline || '');
+  };
+
+  const handleSaveEditEvent = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eventToEdit || !onUpdateEvent) return;
+
+    const selectedVenue = (venues ?? []).find((v) => v.id === editVenueId);
+
+    onUpdateEvent(eventToEdit.id, {
+      title: editTitle,
+      category: editCategory,
+      description: editDescription,
+      posterUrl: editPosterUrl,
+      date: editDate,
+      startTime: editStartTime,
+      endTime: editEndTime,
+      venueId: editVenueId,
+      venueName: selectedVenue?.name || eventToEdit.venueName,
+      maxSeats: Number(editMaxSeats),
+      status: editStatus,
+      registrationDeadline: editDeadline
+    });
+
+    soundFx.playSuccess();
+    setEventToEdit(null);
+  };
 
   const filteredEvents = (events ?? []).filter((evt) => {
     if (!evt) return false;
     const matchesCategory = selectedCategory === 'All' || evt.category === selectedCategory;
-    const isUserRegistered = (evt.registeredUserIds ?? []).includes(currentUser?.id || '');
+    const isUserRegistered = !isGuest && (evt.registeredUserIds ?? []).includes(currentUser?.id || '');
 
     if (activeTab === 'Upcoming') return matchesCategory && evt.status === 'Upcoming';
     if (activeTab === 'Registered') return matchesCategory && isUserRegistered;
@@ -374,12 +489,8 @@ export const EventHub: React.FC<EventHubProps> = ({
                   </span>
 
                   {(() => {
-                    const isSystemAdmin = selectedRole === 'System_Admin' || currentUser?.role === 'System_Admin';
-                    const canDeleteThisEvent = isSystemAdmin || (
-                      selectedRole === 'Club_Exec' &&
-                      Array.isArray(currentUser?.clubMemberships) &&
-                      currentUser.clubMemberships.some((m) => m.clubId === evt.clubId && m.status === 'Active')
-                    );
+                    const canDeleteThisEvent = canDeleteEvent(evt);
+                    const canEditThisEvent = canEditEvent(evt);
 
                     return (
                       <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
@@ -387,6 +498,20 @@ export const EventHub: React.FC<EventHubProps> = ({
                           <span className="text-[10px] font-mono font-bold bg-slate-950/85 text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
                             Deadline: {evt.registrationDeadline}
                           </span>
+                        )}
+                        {canEditThisEvent && onUpdateEvent && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              soundFx.playClick();
+                              openEditModal(evt);
+                            }}
+                            className="p-1.5 rounded-lg bg-teal-950/90 hover:bg-teal-900 text-teal-300 hover:text-white border border-teal-500/40 transition-all cursor-pointer shadow-md"
+                            title={`Edit / Reschedule "${evt.title}"`}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                         {canDeleteThisEvent && onDeleteEvent && (
                           <button
@@ -430,6 +555,55 @@ export const EventHub: React.FC<EventHubProps> = ({
                     <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed mt-1.5">
                       {evt.description}
                     </p>
+                  </div>
+
+                  {/* Feedback rating & review link badge */}
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    {(() => {
+                      const { avg, count } = getEventRatingStats(evt.id);
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            soundFx.playClick();
+                            if (onOpenFeedbacks) onOpenFeedbacks(evt.id);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-amber-300 border border-amber-400/30 text-xs font-bold transition-all shadow-sm group/fb cursor-pointer"
+                          title="View feedbacks and ratings for this event"
+                        >
+                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 group-hover/fb:scale-110 transition-transform" />
+                          {avg ? (
+                            <span>
+                              <strong className="text-white">{avg}</strong> ★{' '}
+                              <span className="text-slate-400 font-normal text-[11px]">
+                                ({count} {count === 1 ? 'review' : 'reviews'})
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-[11px] flex items-center gap-1 font-medium">
+                              <MessageSquare className="w-3 h-3 text-slate-500" />
+                              <span>View Feedbacks ({count})</span>
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })()}
+
+                    {canEditEvent(evt) && onUpdateEvent && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          soundFx.playClick();
+                          openEditModal(evt);
+                        }}
+                        className="text-[11px] font-bold text-teal-300 hover:text-teal-200 flex items-center gap-1 bg-teal-950/60 hover:bg-teal-900/80 px-2.5 py-1.5 rounded-xl border border-teal-500/30 transition-all cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit / Reschedule</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Seat Capacity Progress Bar & Detailed Statistics */}
@@ -493,7 +667,19 @@ export const EventHub: React.FC<EventHubProps> = ({
               {/* Action Bar */}
               <div className="p-4 bg-slate-950/60 border-t border-white/10 flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  {isRegistered ? (
+                  {isGuest ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playClick();
+                        if (onRequireAuth) onRequireAuth();
+                      }}
+                      className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold py-2.5 rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Sign In to Register for Event</span>
+                    </button>
+                  ) : isRegistered ? (
                     <div className="flex items-center gap-2 w-full justify-between">
                       <span className="text-xs font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -585,7 +771,21 @@ export const EventHub: React.FC<EventHubProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {onDeleteEvent && (
+                  {canEditEvent(activeRosterModal) && onUpdateEvent && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = activeRosterModal;
+                        setActiveRosterModal(null);
+                        openEditModal(target);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-950/70 hover:bg-teal-900 text-teal-300 hover:text-white border border-teal-500/40 text-xs font-bold transition-all cursor-pointer shadow"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit / Reschedule</span>
+                    </button>
+                  )}
+                  {canDeleteEvent(activeRosterModal) && onDeleteEvent && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1091,6 +1291,226 @@ export const EventHub: React.FC<EventHubProps> = ({
                   <span>Delete Event</span>
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* EDIT & RESCHEDULE EVENT MODAL */}
+      <AnimatePresence>
+        {eventToEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEventToEdit(null)}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="glass-panel rounded-3xl max-w-xl w-full max-h-[90vh] overflow-y-auto border border-teal-500/40 shadow-2xl relative z-10 p-6 sm:p-8 space-y-5 bg-[#081216]"
+            >
+              <div className="flex justify-between items-start border-b border-white/10 pb-4">
+                <div>
+                  <span className="text-teal-400 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Event Configuration & Rescheduling</span>
+                  </span>
+                  <h3 className="text-xl font-black text-white mt-0.5 font-heading">
+                    Edit {eventToEdit.title}
+                  </h3>
+                  <p className="text-slate-400 text-xs">
+                    Hosted by {eventToEdit.clubName} • ID: {eventToEdit.id}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEventToEdit(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Reschedule alert indicator */}
+              {(editDate !== eventToEdit.date ||
+                editStartTime !== eventToEdit.startTime ||
+                editEndTime !== eventToEdit.endTime ||
+                editVenueId !== eventToEdit.venueId) && (
+                <div className="p-3.5 rounded-2xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span>Reschedule Sync Detected</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-200/90">
+                    You changed the date, time, or venue. Upon saving, the campus venue booking will be synchronized automatically and an alert notification will be dispatched to all registered student attendees.
+                  </p>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveEditEvent} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Event Title</label>
+                  <input
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full p-2.5 rounded-xl glass-input text-white text-xs outline-none focus:ring-1 focus:ring-teal-400"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Category</label>
+                    <select
+                      value={editCategory}
+                      onChange={(e) => setEditCategory(e.target.value as any)}
+                      className="w-full p-2.5 rounded-xl glass-input font-medium"
+                    >
+                      {categories.filter((c) => c !== 'All').map((cat) => (
+                        <option key={cat} value={cat} className="bg-slate-950">
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Lifecycle Status</label>
+                    <select
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value as any)}
+                      className="w-full p-2.5 rounded-xl glass-input font-medium"
+                    >
+                      <option value="Upcoming" className="bg-slate-950">Upcoming</option>
+                      <option value="Ongoing" className="bg-slate-950">Ongoing</option>
+                      <option value="Completed" className="bg-slate-950">Completed</option>
+                      <option value="Cancelled" className="bg-slate-950">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-teal-500/20 space-y-3">
+                  <span className="text-[10px] font-mono font-bold text-teal-300 uppercase tracking-wider block">
+                    Schedule & Venue Allocation
+                  </span>
+
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Event Date</label>
+                    <input
+                      type="date"
+                      required
+                      value={editDate}
+                      onChange={(e) => setEditDate(e.target.value)}
+                      className="w-full p-2 rounded-xl glass-input font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-300 block mb-1">Start Time</label>
+                      <input
+                        type="time"
+                        required
+                        value={editStartTime}
+                        onChange={(e) => setEditStartTime(e.target.value)}
+                        className="w-full p-2 rounded-xl glass-input font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-300 block mb-1">End Time</label>
+                      <input
+                        type="time"
+                        required
+                        value={editEndTime}
+                        onChange={(e) => setEditEndTime(e.target.value)}
+                        className="w-full p-2 rounded-xl glass-input font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Allocated Campus Venue</label>
+                    <select
+                      value={editVenueId}
+                      onChange={(e) => setEditVenueId(e.target.value)}
+                      className="w-full p-2.5 rounded-xl glass-input font-medium text-xs"
+                    >
+                      {(venues ?? []).map((v) => (
+                        <option key={v.id} value={v.id} className="bg-slate-950">
+                          {v.name} (Cap: {v.capacity} • {v.location})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Max Attendee Seats</label>
+                    <input
+                      type="number"
+                      min={10}
+                      max={1000}
+                      value={editMaxSeats}
+                      onChange={(e) => setEditMaxSeats(Number(e.target.value))}
+                      className="w-full p-2 rounded-xl glass-input font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Registration Deadline</label>
+                    <input
+                      type="date"
+                      value={editDeadline}
+                      onChange={(e) => setEditDeadline(e.target.value)}
+                      className="w-full p-2 rounded-xl glass-input font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Poster Image URL</label>
+                  <input
+                    type="url"
+                    value={editPosterUrl}
+                    onChange={(e) => setEditPosterUrl(e.target.value)}
+                    className="w-full p-2 rounded-xl glass-input text-xs"
+                    placeholder="https://..."
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Event Description</label>
+                  <textarea
+                    rows={3}
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full p-2.5 rounded-xl glass-input text-xs leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEventToEdit(null)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-black text-xs shadow-xl shadow-teal-950/60 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Changes & Sync</span>
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

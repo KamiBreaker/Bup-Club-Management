@@ -190,3 +190,19 @@ export interface AnalyticsSummary {
   clubActivityMetrics: { clubCode: string; eventsCount: number; memberCount: number; engagementScore: number }[];
   monthlyRegistrations: { month: string; rsvps: number; newMembers: number }[];
 }
+
+export interface EventFeedback {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  clubId: string;
+  clubName: string;
+  userId: string;
+  studentName: string;
+  studentId: string;
+  department: string;
+  rating: number; // 1 to 5
+  comment: string;
+  category?: 'Organization' | 'Content' | 'Venue & Hospitality' | 'General';
+  createdAt: string;
+}

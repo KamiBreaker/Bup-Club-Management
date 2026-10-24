@@ -17,11 +17,13 @@ import {
   Ticket,
   UserCheck,
   GraduationCap,
-  Crown
+  Crown,
+  MessageSquareQuote,
+  LogIn
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
-export type CmsTabId = 'clubs' | 'events' | 'venues' | 'membership-hub' | 'my-passes' | 'notifications' | 'analytics';
+export type CmsTabId = 'clubs' | 'events' | 'feedbacks' | 'venues' | 'membership-hub' | 'my-passes' | 'notifications' | 'analytics';
 
 interface HeaderProps {
   activeCmsTab: CmsTabId;
@@ -32,7 +34,9 @@ interface HeaderProps {
   currentUser: UserProfile;
   unreadNotificationsCount: number;
   pendingApplicationsCount?: number;
+  isGuest?: boolean;
   onLogout: () => void;
+  onSignInClick?: () => void;
   onOpenCommandPalette: () => void;
   onOpenMotionSettings: () => void;
 }
@@ -46,32 +50,42 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   unreadNotificationsCount,
   pendingApplicationsCount = 0,
+  isGuest = false,
   onLogout,
+  onSignInClick,
   onOpenCommandPalette,
   onOpenMotionSettings
 }) => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-  const tabs = [
-    { id: 'clubs' as const, label: 'Clubs & Societies', icon: Users },
-    { id: 'events' as const, label: 'Events & RSVPs', icon: Calendar },
-    { id: 'venues' as const, label: 'Venue Booking', icon: Building2 },
-    ...(selectedRole === 'Student'
-      ? [{ id: 'my-passes' as const, label: 'My Campus Life', icon: Ticket }]
-      : []),
-    {
-      id: 'membership-hub' as const,
-      label: selectedRole === 'Student' ? 'Applications' : 'Membership Hub',
-      icon: UserCheck,
-      count: selectedRole !== 'Student' && pendingApplicationsCount > 0 ? pendingApplicationsCount : undefined
-    },
-    { id: 'notifications' as const, label: 'Notifications', icon: Bell, count: unreadNotificationsCount },
-    ...(selectedRole === 'Venue_Admin' ||
-    selectedRole === 'System_Admin' ||
-    selectedRole === 'Faculty_Advisor' ||
-    selectedRole === 'Club_Exec'
-      ? [{ id: 'analytics' as const, label: 'Admin Analytics', icon: LayoutDashboard }]
-      : [])
-  ];
+  const tabs = isGuest
+    ? [
+        { id: 'clubs' as const, label: 'Clubs & Societies', icon: Users },
+        { id: 'events' as const, label: 'Campus Events', icon: Calendar },
+        { id: 'feedbacks' as const, label: 'Feedbacks & Ratings', icon: MessageSquareQuote },
+        { id: 'venues' as const, label: 'Venues Directory', icon: Building2 }
+      ]
+    : [
+        { id: 'clubs' as const, label: 'Clubs & Societies', icon: Users },
+        { id: 'events' as const, label: 'Events & RSVPs', icon: Calendar },
+        { id: 'feedbacks' as const, label: 'Feedbacks & Reviews', icon: MessageSquareQuote },
+        { id: 'venues' as const, label: 'Venue Booking', icon: Building2 },
+        ...(selectedRole === 'Student'
+          ? [{ id: 'my-passes' as const, label: 'My Campus Life', icon: Ticket }]
+          : []),
+        {
+          id: 'membership-hub' as const,
+          label: selectedRole === 'Student' ? 'Applications' : 'Membership Hub',
+          icon: UserCheck,
+          count: selectedRole !== 'Student' && pendingApplicationsCount > 0 ? pendingApplicationsCount : undefined
+        },
+        { id: 'notifications' as const, label: 'Notifications', icon: Bell, count: unreadNotificationsCount },
+        ...(selectedRole === 'Venue_Admin' ||
+        selectedRole === 'System_Admin' ||
+        selectedRole === 'Faculty_Advisor' ||
+        selectedRole === 'Club_Exec'
+          ? [{ id: 'analytics' as const, label: 'Admin Analytics', icon: LayoutDashboard }]
+          : [])
+      ];
 
   return (
     <header className="sticky top-0 z-40 w-full transition-all">
@@ -202,33 +216,49 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
 
-            {/* User Profile & Logout */}
-            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-white/10">
-              <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.name}
-                className="w-8 h-8 rounded-xl object-cover ring-2 ring-emerald-500/30 bg-slate-800"
-              />
-              <div className="hidden lg:block text-left">
-                <p className="text-xs font-bold text-white leading-tight">
-                  {currentUser.name}
-                </p>
-                <p className="text-[10px] text-emerald-400 font-mono">
-                  {currentUser.studentId}
-                </p>
+            {/* User Profile & Logout OR Guest Sign In */}
+            {isGuest ? (
+              <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    if (onSignInClick) onSignInClick();
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-xs transition shadow-md shadow-emerald-950/40 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Sign In / Register</span>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  soundFx.playClick();
-                  setIsLogoutConfirmOpen(true);
-                }}
-                title="Sign out"
-                className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/40 text-rose-500 hover:text-rose-400 border border-white/10 hover:border-rose-500/30 transition-all cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-white/10">
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.name}
+                  className="w-8 h-8 rounded-xl object-cover ring-2 ring-emerald-500/30 bg-slate-800"
+                />
+                <div className="hidden lg:block text-left">
+                  <p className="text-xs font-bold text-white leading-tight">
+                    {currentUser.name}
+                  </p>
+                  <p className="text-[10px] text-emerald-400 font-mono">
+                    {currentUser.studentId}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setIsLogoutConfirmOpen(true);
+                  }}
+                  title="Sign out"
+                  className="p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/40 text-rose-500 hover:text-rose-400 border border-white/10 hover:border-rose-500/30 transition-all cursor-pointer"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -275,8 +305,12 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 font-mono">
             <span>Role:</span>
-            <span className="font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-500/30 text-[11px]">
-              {selectedRole.replace('_', ' ')}
+            <span className={`font-bold px-2 py-0.5 rounded-lg border text-[11px] ${
+              isGuest
+                ? 'text-amber-300 bg-amber-950/60 border-amber-500/30'
+                : 'text-emerald-300 bg-emerald-950/60 border-emerald-500/30'
+            }`}>
+              {isGuest ? 'Guest (View Only)' : selectedRole.replace('_', ' ')}
             </span>
           </div>
         </div>

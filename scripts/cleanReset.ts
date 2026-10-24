@@ -16,6 +16,7 @@ db.exec(`
   DELETE FROM clubs;
   DELETE FROM events;
   DELETE FROM venues;
+  DELETE FROM event_feedbacks;
 `);
 
 console.log('Seeding clean administrator account...');

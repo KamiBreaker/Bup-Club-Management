@@ -17,7 +17,8 @@ import {
   INITIAL_APPLICATIONS,
   INITIAL_REGISTRATIONS,
   INITIAL_ATTENDANCE,
-  INITIAL_ANNOUNCEMENTS
+  INITIAL_ANNOUNCEMENTS,
+  INITIAL_EVENT_FEEDBACKS
 } from './src/data/cmsData';
 
 dotenv.config();
@@ -212,6 +213,22 @@ function initDatabaseTables() {
       priority TEXT NOT NULL DEFAULT 'Normal',
       created_at TEXT NOT NULL,
       created_by TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS event_feedbacks (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      event_title TEXT NOT NULL,
+      club_id TEXT NOT NULL,
+      club_name TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      student_name TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      department TEXT NOT NULL,
+      rating INTEGER NOT NULL,
+      comment TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'General',
+      created_at TEXT NOT NULL
     );
   `);
 
@@ -501,6 +518,32 @@ async function seedDatabase() {
       }
     }
 
+    // 11. Seed Event Feedbacks
+    const fbCount = (db.prepare('SELECT COUNT(*) as count FROM event_feedbacks').get() as any)?.count || 0;
+    if (fbCount === 0) {
+      const insertFb = db.prepare(`
+        INSERT OR IGNORE INTO event_feedbacks (id, event_id, event_title, club_id, club_name, user_id, student_name, student_id, department, rating, comment, category, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const fb of INITIAL_EVENT_FEEDBACKS) {
+        insertFb.run(
+          fb.id,
+          fb.eventId,
+          fb.eventTitle,
+          fb.clubId,
+          fb.clubName,
+          fb.userId,
+          fb.studentName,
+          fb.studentId,
+          fb.department,
+          fb.rating,
+          fb.comment,
+          fb.category || 'General',
+          fb.createdAt
+        );
+      }
+    }
+
   } catch (e) {
     console.error('Database seed error:', e);
   }
@@ -520,6 +563,7 @@ function loadNormalizedAppState() {
   const regRows = db.prepare('SELECT * FROM event_registrations ORDER BY registration_date DESC').all();
   const attRows = db.prepare('SELECT * FROM attendance ORDER BY marked_at DESC').all();
   const ancRows = db.prepare('SELECT * FROM announcements ORDER BY created_at DESC').all();
+  const fbRows = db.prepare('SELECT * FROM event_feedbacks ORDER BY created_at DESC').all();
 
   const users = usersRows.map((r: any) => ({
     id: r.id,
@@ -698,6 +742,22 @@ function loadNormalizedAppState() {
     createdBy: r.created_by
   }));
 
+  const feedbacks = fbRows.map((r: any) => ({
+    id: r.id,
+    eventId: r.event_id,
+    eventTitle: r.event_title,
+    clubId: r.club_id,
+    clubName: r.club_name,
+    userId: r.user_id,
+    studentName: r.student_name,
+    studentId: r.student_id,
+    department: r.department,
+    rating: Number(r.rating) || 5,
+    comment: r.comment,
+    category: r.category || 'General',
+    createdAt: r.created_at
+  }));
+
   const pendingBookingsCount = bookings.filter((b: any) => b.status === 'Pending').length;
   const pendingAppsCount = applications.filter((a: any) => a.status === 'Pending').length;
   const totalActiveMembers = clubs.reduce((acc: number, c: any) => acc + (c.memberCount || 0), 0);
@@ -722,6 +782,7 @@ function loadNormalizedAppState() {
     registrations,
     attendance,
     announcements,
+    feedbacks,
     analytics
   };
 }
@@ -914,7 +975,7 @@ async function startServer() {
     return res.json({ user: buildUserProfile(row) });
   });
 
-  app.get('/api/app-state', requireAuth, (_req, res) => {
+  app.get('/api/app-state', (_req, res) => {
     const stateSnapshot = loadNormalizedAppState();
     return res.json({ state: stateSnapshot });
   });
@@ -1937,6 +1998,513 @@ async function startServer() {
 
           const stateSnapshot = loadNormalizedAppState();
           return res.json({ success: true, message: `Society "${club.name}" and associated records removed successfully.`, state: stateSnapshot });
+        }
+
+        // --- 13. UPDATE CLUB DETAILS & FACULTY ADVISOR ---
+        case 'update-club': {
+          const mergedPayload = { ...(payload || {}), ...(payload?.updates || {}) };
+          const {
+            clubId = payload?.clubId,
+            name,
+            code,
+            tagline,
+            description,
+            category,
+            department,
+            facultyAdvisor,
+            facultyAdvisorName,
+            facultyAdvisorDesignation,
+            facultyAdvisorEmail,
+            recruitmentOpen,
+            recruitmentDeadline,
+            budgetAllocated,
+            objectives,
+            achievements,
+            bannerUrl,
+            logoUrl
+          } = mergedPayload;
+
+          if (!clubId) {
+            return res.status(400).json({ error: 'Club ID is required.' });
+          }
+
+          const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId) as any;
+          if (!club) {
+            return res.status(404).json({ error: 'Club not found.' });
+          }
+
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const isAdvisor = currentUser.role === 'Faculty_Advisor';
+          const memberships = Array.isArray(currentUser.clubMemberships) ? currentUser.clubMemberships : [];
+          const isClubExec = memberships.some((m: any) => m.clubId === clubId && m.status === 'Active');
+          const isModerator = JSON.parse(club.executives || '[]').some(
+            (e: any) => e.studentId === currentUser.studentId || e.name === currentUser.name
+          );
+
+          if (!isSystemAdmin && !isAdvisor && !isClubExec && !isModerator) {
+            return res.status(403).json({ error: 'Access Denied: Only administrators or club executives can modify club details.' });
+          }
+
+          const updatedName = name !== undefined ? String(name).trim() : club.name;
+          const updatedCode = code !== undefined ? String(code).trim().toUpperCase() : club.code;
+          const updatedTagline = tagline !== undefined ? String(tagline).trim() : club.tagline;
+          const updatedDescription = description !== undefined ? String(description).trim() : club.description;
+          const updatedCategory = category !== undefined ? category : club.category;
+          const updatedDepartment = department !== undefined ? department : club.department;
+          const updatedLogo = logoUrl !== undefined ? logoUrl : club.logo_url;
+          const updatedBanner = bannerUrl !== undefined ? bannerUrl : club.banner_url;
+          const updatedRecruitmentOpen = recruitmentOpen !== undefined ? (recruitmentOpen ? 1 : 0) : club.recruitment_open;
+          const updatedDeadline = recruitmentDeadline !== undefined ? recruitmentDeadline : club.recruitment_deadline;
+          const updatedBudget = (isSystemAdmin && budgetAllocated !== undefined) ? Number(budgetAllocated) : club.budget_allocated;
+
+          let updatedAdvisor = club.faculty_advisor;
+          if (facultyAdvisor !== undefined) {
+            updatedAdvisor = JSON.stringify(facultyAdvisor);
+          } else if (facultyAdvisorName !== undefined || facultyAdvisorDesignation !== undefined || facultyAdvisorEmail !== undefined) {
+            let existingAdv = { name: '', designation: '', email: '' };
+            try { existingAdv = JSON.parse(club.faculty_advisor || '{}'); } catch {}
+            updatedAdvisor = JSON.stringify({
+              name: facultyAdvisorName !== undefined ? facultyAdvisorName : existingAdv.name,
+              designation: facultyAdvisorDesignation !== undefined ? facultyAdvisorDesignation : existingAdv.designation,
+              email: facultyAdvisorEmail !== undefined ? facultyAdvisorEmail : existingAdv.email
+            });
+          }
+
+          let updatedObjectives = club.objectives;
+          if (objectives !== undefined) {
+            updatedObjectives = JSON.stringify(Array.isArray(objectives) ? objectives : [objectives]);
+          }
+
+          let updatedAchievements = club.achievements;
+          if (achievements !== undefined) {
+            updatedAchievements = JSON.stringify(Array.isArray(achievements) ? achievements : [achievements]);
+          }
+
+          db.prepare(`
+            UPDATE clubs
+            SET name = ?, code = ?, tagline = ?, description = ?, category = ?, department = ?,
+                logo_url = ?, banner_url = ?, faculty_advisor = ?, recruitment_open = ?,
+                recruitment_deadline = ?, budget_allocated = ?, objectives = ?, achievements = ?
+            WHERE id = ?
+          `).run(
+            updatedName, updatedCode, updatedTagline, updatedDescription, updatedCategory, updatedDepartment,
+            updatedLogo, updatedBanner, updatedAdvisor, updatedRecruitmentOpen,
+            updatedDeadline, updatedBudget, updatedObjectives, updatedAchievements,
+            clubId
+          );
+
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          db.prepare(`
+            INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+            VALUES (?, ?, ?, 'System', ?, ?)
+          `).run(
+            `NT-${Date.now()}`,
+            `Club Profile Updated: ${updatedName}`,
+            `Advisory and operational details for "${updatedName}" have been updated by ${currentUser.name}.`,
+            JSON.stringify(['Club_Exec', 'Faculty_Advisor', 'System_Admin']),
+            nowStr
+          );
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: `Club "${updatedName}" profile and advisor details updated.`, state: stateSnapshot });
+        }
+
+        // --- 14. APPOINT CLUB EXECUTIVE / MODERATOR ---
+        case 'appoint-club-executive': {
+          const { clubId, targetUserId, studentId, designation = 'Club Moderator' } = payload || {};
+          if (!clubId) {
+            return res.status(400).json({ error: 'Club ID is required.' });
+          }
+
+          const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId) as any;
+          if (!club) {
+            return res.status(404).json({ error: 'Club not found.' });
+          }
+
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const isAdvisor = currentUser.role === 'Faculty_Advisor';
+          const currentExecs: any[] = JSON.parse(club.executives || '[]');
+          const isModerator = currentExecs.some(
+            (e: any) => e.studentId === currentUser.studentId || e.name === currentUser.name
+          );
+
+          if (!isSystemAdmin && !isAdvisor && !isModerator) {
+            return res.status(403).json({ error: 'Access Denied: Only club moderators or administrators can appoint executives.' });
+          }
+
+          let candidate = null;
+          if (targetUserId) {
+            candidate = db.prepare('SELECT * FROM users WHERE id = ?').get(targetUserId) as any;
+          }
+          if (!candidate && studentId) {
+            candidate = db.prepare('SELECT * FROM users WHERE student_id = ?').get(studentId) as any;
+          }
+
+          if (!candidate) {
+            return res.status(404).json({ error: 'Target student not found in user directory.' });
+          }
+
+          const newExecObj = {
+            name: candidate.name,
+            designation: designation.trim() || 'Club Moderator',
+            studentId: candidate.student_id,
+            avatar: candidate.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${candidate.student_id}`
+          };
+
+          const updatedExecs = currentExecs.filter((e: any) => e.studentId !== candidate.student_id);
+          updatedExecs.push(newExecObj);
+
+          db.prepare('UPDATE clubs SET executives = ? WHERE id = ?').run(JSON.stringify(updatedExecs), clubId);
+
+          const userMemberships: any[] = JSON.parse(candidate.club_memberships || '[]');
+          const existingMemIdx = userMemberships.findIndex((m: any) => m.clubId === clubId);
+          if (existingMemIdx >= 0) {
+            userMemberships[existingMemIdx].roleName = newExecObj.designation;
+            userMemberships[existingMemIdx].status = 'Active';
+          } else {
+            userMemberships.push({ clubId, roleName: newExecObj.designation, status: 'Active' });
+          }
+
+          const newRole = candidate.role === 'Student' ? 'Club_Exec' : candidate.role;
+          db.prepare('UPDATE users SET role = ?, club_memberships = ? WHERE id = ?').run(
+            newRole,
+            JSON.stringify(userMemberships),
+            candidate.id
+          );
+
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          db.prepare(`
+            INSERT INTO notifications (id, title, message, type, target_roles, target_user_id, timestamp)
+            VALUES (?, ?, ?, 'System', ?, ?, ?)
+          `).run(
+            `NT-${Date.now()}`,
+            `🎖️ Executive Appointment: ${club.name}`,
+            `Congratulations! You have been appointed as "${newExecObj.designation}" of ${club.name}.`,
+            JSON.stringify(['Student', 'Club_Exec']),
+            candidate.id,
+            nowStr
+          );
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: `${candidate.name} appointed as ${newExecObj.designation}.`, state: stateSnapshot });
+        }
+
+        // --- 15. REMOVE CLUB EXECUTIVE ---
+        case 'remove-club-executive': {
+          const { clubId, studentId } = payload || {};
+          if (!clubId || !studentId) {
+            return res.status(400).json({ error: 'Club ID and Student ID are required.' });
+          }
+
+          const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId) as any;
+          if (!club) {
+            return res.status(404).json({ error: 'Club not found.' });
+          }
+
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const isAdvisor = currentUser.role === 'Faculty_Advisor';
+          const currentExecs: any[] = JSON.parse(club.executives || '[]');
+          const isModerator = currentExecs.some(
+            (e: any) => e.studentId === currentUser.studentId || e.name === currentUser.name
+          );
+
+          if (!isSystemAdmin && !isAdvisor && !isModerator) {
+            return res.status(403).json({ error: 'Access Denied: Only club moderators or administrators can modify executive panels.' });
+          }
+
+          const removedExec = currentExecs.find((e: any) => e.studentId === studentId);
+          const updatedExecs = currentExecs.filter((e: any) => e.studentId !== studentId);
+
+          db.prepare('UPDATE clubs SET executives = ? WHERE id = ?').run(JSON.stringify(updatedExecs), clubId);
+
+          const targetUser = db.prepare('SELECT * FROM users WHERE student_id = ?').get(studentId) as any;
+          if (targetUser) {
+            try {
+              const memberships: any[] = JSON.parse(targetUser.club_memberships || '[]');
+              const updatedMemberships = memberships.map((m: any) => {
+                if (m.clubId === clubId) {
+                  return { ...m, roleName: 'General Member' };
+                }
+                return m;
+              });
+              db.prepare('UPDATE users SET club_memberships = ? WHERE id = ?').run(JSON.stringify(updatedMemberships), targetUser.id);
+            } catch {}
+          }
+
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          db.prepare(`
+            INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+            VALUES (?, ?, ?, 'System', ?, ?)
+          `).run(
+            `NT-${Date.now()}`,
+            `Executive Panel Updated: ${club.name}`,
+            `${removedExec ? removedExec.name : studentId} was relieved of executive duties for ${club.name}.`,
+            JSON.stringify(['Club_Exec', 'Faculty_Advisor', 'System_Admin']),
+            nowStr
+          );
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: `Executive removed from ${club.name} roster.`, state: stateSnapshot });
+        }
+
+        // --- 16. UPDATE CLUB EXECUTIVE DESIGNATION ---
+        case 'update-club-executive-role': {
+          const { clubId, studentId, designation } = payload || {};
+          if (!clubId || !studentId || !designation) {
+            return res.status(400).json({ error: 'Club ID, Student ID, and new designation are required.' });
+          }
+
+          const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId) as any;
+          if (!club) {
+            return res.status(404).json({ error: 'Club not found.' });
+          }
+
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const isAdvisor = currentUser.role === 'Faculty_Advisor';
+          const currentExecs: any[] = JSON.parse(club.executives || '[]');
+          const isModerator = currentExecs.some(
+            (e: any) => e.studentId === currentUser.studentId || e.name === currentUser.name
+          );
+
+          if (!isSystemAdmin && !isAdvisor && !isModerator) {
+            return res.status(403).json({ error: 'Access Denied: Only club moderators or administrators can modify executive designations.' });
+          }
+
+          const updatedExecs = currentExecs.map((e: any) => {
+            if (e.studentId === studentId) {
+              return { ...e, designation: designation.trim() };
+            }
+            return e;
+          });
+
+          db.prepare('UPDATE clubs SET executives = ? WHERE id = ?').run(JSON.stringify(updatedExecs), clubId);
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: `Executive designation updated to ${designation}.`, state: stateSnapshot });
+        }
+
+        // --- 17. UPDATE / RESCHEDULE EVENT ---
+        case 'update-event': {
+          const mergedPayload = { ...(payload || {}), ...(payload?.updates || {}) };
+          const {
+            eventId = payload?.eventId,
+            title,
+            category,
+            description,
+            posterUrl,
+            date,
+            startTime,
+            endTime,
+            venueId,
+            venueName,
+            maxSeats,
+            registrationDeadline,
+            status,
+            isRSVPAllowed,
+            requiredEquipment
+          } = mergedPayload;
+
+          if (!eventId) {
+            return res.status(400).json({ error: 'Event ID is required.' });
+          }
+
+          const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId) as any;
+          if (!event) {
+            return res.status(404).json({ error: 'Event not found.' });
+          }
+
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const isAdvisor = currentUser.role === 'Faculty_Advisor';
+          const memberships = Array.isArray(currentUser.clubMemberships) ? currentUser.clubMemberships : [];
+          const isClubExec = memberships.some((m: any) => m.clubId === event.club_id && m.status === 'Active');
+
+          const club = db.prepare('SELECT executives FROM clubs WHERE id = ?').get(event.club_id) as any;
+          const isModerator = JSON.parse(club?.executives || '[]').some(
+            (e: any) => e.studentId === currentUser.studentId || e.name === currentUser.name
+          );
+
+          if (!isSystemAdmin && !isAdvisor && !isClubExec && !isModerator) {
+            return res.status(403).json({ error: 'Access Denied: Only authorized club organizers or administrators can edit this event.' });
+          }
+
+          const updatedTitle = title !== undefined ? title : event.title;
+          const updatedCategory = category !== undefined ? category : event.category;
+          const updatedDesc = description !== undefined ? description : event.description;
+          const updatedPoster = posterUrl !== undefined ? posterUrl : event.poster_url;
+          const updatedDate = date !== undefined ? date : event.date;
+          const updatedStart = startTime !== undefined ? startTime : event.start_time;
+          const updatedEnd = endTime !== undefined ? endTime : event.end_time;
+          const updatedVenueId = venueId !== undefined ? venueId : event.venue_id;
+          const updatedVenueName = venueName !== undefined ? venueName : event.venue_name;
+          const updatedMaxSeats = maxSeats !== undefined ? Number(maxSeats) : event.max_seats;
+          const updatedDeadline = registrationDeadline !== undefined ? registrationDeadline : event.registration_deadline;
+          const updatedStatus = status !== undefined ? status : event.status;
+          const updatedRsvp = isRSVPAllowed !== undefined ? (isRSVPAllowed ? 1 : 0) : event.is_rsvp_allowed;
+          const updatedEquip = requiredEquipment !== undefined ? JSON.stringify(requiredEquipment) : event.required_equipment;
+
+          const isRescheduled = (updatedDate !== event.date) || (updatedStart !== event.start_time) || (updatedVenueId !== event.venue_id);
+
+          db.prepare(`
+            UPDATE events
+            SET title = ?, category = ?, description = ?, poster_url = ?, date = ?, start_time = ?, end_time = ?,
+                venue_id = ?, venue_name = ?, max_seats = ?, registration_deadline = ?, status = ?,
+                is_rsvp_allowed = ?, required_equipment = ?
+            WHERE id = ?
+          `).run(
+            updatedTitle, updatedCategory, updatedDesc, updatedPoster, updatedDate, updatedStart, updatedEnd,
+            updatedVenueId, updatedVenueName, updatedMaxSeats, updatedDeadline, updatedStatus,
+            updatedRsvp, updatedEquip,
+            eventId
+          );
+
+          if (isRescheduled) {
+            db.prepare(`
+              UPDATE venue_bookings
+              SET event_title = ?, venue_id = ?, venue_name = ?, booking_date = ?, start_time = ?, end_time = ?
+              WHERE event_id = ?
+            `).run(updatedTitle, updatedVenueId, updatedVenueName, updatedDate, updatedStart, updatedEnd, eventId);
+          }
+
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          if (isRescheduled) {
+            db.prepare(`
+              INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+              VALUES (?, ?, ?, 'Event', ?, ?)
+            `).run(
+              `NT-${Date.now()}`,
+              `⚠️ Event Rescheduled: ${updatedTitle}`,
+              `"${updatedTitle}" hosted by ${event.club_name} has been rescheduled to ${updatedDate} (${updatedStart} - ${updatedEnd}) at ${updatedVenueName}. All existing registration passes remain active.`,
+              JSON.stringify(['Student', 'Club_Exec', 'Faculty_Advisor']),
+              nowStr
+            );
+          } else {
+            db.prepare(`
+              INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+              VALUES (?, ?, ?, 'System', ?, ?)
+            `).run(
+              `NT-${Date.now()}`,
+              `Event Details Updated: ${updatedTitle}`,
+              `Details for "${updatedTitle}" were updated by ${currentUser.name}.`,
+              JSON.stringify(['Club_Exec', 'Faculty_Advisor']),
+              nowStr
+            );
+          }
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({
+            success: true,
+            message: isRescheduled ? `Event rescheduled to ${updatedDate}. Attendees notified.` : 'Event updated successfully.',
+            state: stateSnapshot
+          });
+        }
+
+        // --- 18. SUBMIT EVENT FEEDBACK (Registered Users Only) ---
+        case 'submit-event-feedback': {
+          const { eventId, rating, comment, category = 'General' } = payload || {};
+          if (!eventId || !rating || !comment) {
+            return res.status(400).json({ error: 'Event ID, rating, and feedback comment are required.' });
+          }
+
+          const numericRating = Math.min(5, Math.max(1, Number(rating) || 5));
+          const cleanComment = String(comment).trim();
+
+          const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId) as any;
+          if (!event) {
+            return res.status(404).json({ error: 'Event not found.' });
+          }
+
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+          const reg = db.prepare(`
+            SELECT id FROM event_registrations 
+            WHERE event_id = ? AND (user_id = ? OR student_id = ?)
+          `).get(eventId, currentUserId, currentUser.studentId);
+
+          const registeredUserIds: string[] = JSON.parse(event.registered_user_ids || '[]');
+          const isListed = registeredUserIds.includes(currentUserId) || registeredUserIds.includes(currentUser.studentId);
+
+          if (!reg && !isListed && !isSystemAdmin) {
+            return res.status(403).json({
+              error: 'Access Denied: Only registered participants of this event can submit feedback.'
+            });
+          }
+
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+          const existingFeedback = db.prepare(`
+            SELECT id FROM event_feedbacks WHERE event_id = ? AND user_id = ?
+          `).get(eventId, currentUserId) as any;
+
+          if (existingFeedback) {
+            db.prepare(`
+              UPDATE event_feedbacks
+              SET rating = ?, comment = ?, category = ?, created_at = ?
+              WHERE id = ?
+            `).run(numericRating, cleanComment, category, nowStr, existingFeedback.id);
+          } else {
+            const fbId = `FB-${Date.now().toString().slice(-6)}`;
+            db.prepare(`
+              INSERT INTO event_feedbacks (
+                id, event_id, event_title, club_id, club_name, user_id, student_name, student_id, department, rating, comment, category, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              fbId,
+              eventId,
+              event.title,
+              event.club_id,
+              event.club_name,
+              currentUserId,
+              currentUser.name,
+              currentUser.studentId,
+              currentUser.department || 'BUP Student',
+              numericRating,
+              cleanComment,
+              category,
+              nowStr
+            );
+          }
+
+          db.prepare(`
+            INSERT INTO notifications (id, title, message, type, target_roles, timestamp)
+            VALUES (?, ?, ?, 'System', ?, ?)
+          `).run(
+            `NT-${Date.now()}`,
+            `⭐ New Feedback for ${event.title}`,
+            `${currentUser.name} rated "${event.title}" ${numericRating} Stars: "${cleanComment.slice(0, 80)}..."`,
+            JSON.stringify(['Club_Exec', 'Faculty_Advisor']),
+            nowStr
+          );
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: 'Thank you for your valuable feedback!', state: stateSnapshot });
+        }
+
+        // --- 19. DELETE EVENT FEEDBACK ---
+        case 'delete-event-feedback': {
+          const { feedbackId } = payload || {};
+          if (!feedbackId) {
+            return res.status(400).json({ error: 'Feedback ID is required.' });
+          }
+
+          const feedback = db.prepare('SELECT * FROM event_feedbacks WHERE id = ?').get(feedbackId) as any;
+          if (!feedback) {
+            return res.status(404).json({ error: 'Feedback record not found.' });
+          }
+
+          const isAuthor = feedback.user_id === currentUserId;
+          const isSystemAdmin = currentUser.role === 'System_Admin';
+
+          if (!isAuthor && !isSystemAdmin) {
+            return res.status(403).json({ error: 'Access Denied: You cannot delete another user\'s feedback.' });
+          }
+
+          db.prepare('DELETE FROM event_feedbacks WHERE id = ?').run(feedbackId);
+
+          const stateSnapshot = loadNormalizedAppState();
+          return res.json({ success: true, message: 'Feedback removed.', state: stateSnapshot });
         }
 
         default:

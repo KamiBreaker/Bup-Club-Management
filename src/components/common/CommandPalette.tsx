@@ -13,10 +13,13 @@ import {
   Sliders,
   ArrowRight,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Star,
+  MessageSquare
 } from 'lucide-react';
 import { Club, ClubEvent, Venue, UserRole, UserProfile } from '../../types/cms';
 import { soundFx } from '../../utils/audioFx';
+import { CmsTabId } from './Header';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -24,7 +27,7 @@ interface CommandPaletteProps {
   clubs: Club[];
   events: ClubEvent[];
   venues: Venue[];
-  onNavigateTab: (tab: 'clubs' | 'events' | 'venues' | 'notifications' | 'analytics') => void;
+  onNavigateTab: (tab: CmsTabId) => void;
   onRoleChange: (role: UserRole) => void;
   onOpenMotionSettings: () => void;
   onExportCsv?: () => void;
@@ -97,6 +100,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       icon: Building2,
       action: () => {
         onNavigateTab('venues');
+        onClose();
+      }
+    },
+    {
+      id: 'nav-feedbacks',
+      title: 'Go to Event Feedbacks & Ratings',
+      subtitle: 'Browse student reviews, ratings and impressions',
+      category: 'Navigation',
+      icon: Star,
+      action: () => {
+        onNavigateTab('feedbacks');
         onClose();
       }
     },
