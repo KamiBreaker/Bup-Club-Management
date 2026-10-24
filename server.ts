@@ -327,40 +327,37 @@ async function seedDatabase() {
       }
     }
 
-    // 4. Seed Events
-    const eventCount = (db.prepare('SELECT COUNT(*) as count FROM events').get() as any)?.count || 0;
-    if (eventCount === 0) {
-      const insertEvent = db.prepare(`
-        INSERT OR IGNORE INTO events (id, club_id, club_name, club_logo, title, category, description, poster_url, date, start_time, end_time, venue_id, venue_name, max_seats, registered_count, status, is_rsvp_allowed, registered_user_ids, attendee_user_ids, registration_deadline, contact_person, organizing_team, required_equipment)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      for (const e of BUP_EVENTS) {
-        insertEvent.run(
-          e.id,
-          e.clubId,
-          e.clubName,
-          e.clubLogo,
-          e.title,
-          e.category,
-          e.description,
-          e.posterUrl,
-          e.date,
-          e.startTime,
-          e.endTime,
-          e.venueId,
-          e.venueName,
-          e.maxSeats,
-          e.registeredCount,
-          e.status,
-          e.isRSVPAllowed ? 1 : 0,
-          JSON.stringify(e.registeredUserIds || []),
-          JSON.stringify(e.attendeeUserIds || []),
-          e.registrationDeadline || '2026-08-16',
-          e.contactPerson || 'Secretary of Operations',
-          e.organizingTeam || `${e.clubName} Core Committee`,
-          JSON.stringify(e.requiredEquipment || ['Projector', 'PA System'])
-        );
-      }
+    // 4. Seed Events (using INSERT OR IGNORE so new events and past records are guaranteed to be present)
+    const insertEvent = db.prepare(`
+      INSERT OR IGNORE INTO events (id, club_id, club_name, club_logo, title, category, description, poster_url, date, start_time, end_time, venue_id, venue_name, max_seats, registered_count, status, is_rsvp_allowed, registered_user_ids, attendee_user_ids, registration_deadline, contact_person, organizing_team, required_equipment)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const e of BUP_EVENTS) {
+      insertEvent.run(
+        e.id,
+        e.clubId,
+        e.clubName,
+        e.clubLogo,
+        e.title,
+        e.category,
+        e.description,
+        e.posterUrl,
+        e.date,
+        e.startTime,
+        e.endTime,
+        e.venueId,
+        e.venueName,
+        e.maxSeats,
+        e.registeredCount,
+        e.status,
+        e.isRSVPAllowed ? 1 : 0,
+        JSON.stringify(e.registeredUserIds || []),
+        JSON.stringify(e.attendeeUserIds || []),
+        e.registrationDeadline || '2026-08-16',
+        e.contactPerson || 'Secretary of Operations',
+        e.organizingTeam || `${e.clubName} Core Committee`,
+        JSON.stringify(e.requiredEquipment || ['Projector', 'PA System'])
+      );
     }
 
     // 5. Seed Venue Bookings
@@ -518,30 +515,27 @@ async function seedDatabase() {
       }
     }
 
-    // 11. Seed Event Feedbacks
-    const fbCount = (db.prepare('SELECT COUNT(*) as count FROM event_feedbacks').get() as any)?.count || 0;
-    if (fbCount === 0) {
-      const insertFb = db.prepare(`
-        INSERT OR IGNORE INTO event_feedbacks (id, event_id, event_title, club_id, club_name, user_id, student_name, student_id, department, rating, comment, category, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      for (const fb of INITIAL_EVENT_FEEDBACKS) {
-        insertFb.run(
-          fb.id,
-          fb.eventId,
-          fb.eventTitle,
-          fb.clubId,
-          fb.clubName,
-          fb.userId,
-          fb.studentName,
-          fb.studentId,
-          fb.department,
-          fb.rating,
-          fb.comment,
-          fb.category || 'General',
-          fb.createdAt
-        );
-      }
+    // 11. Seed Event Feedbacks (using INSERT OR IGNORE so feedbacks for past events are present)
+    const insertFb = db.prepare(`
+      INSERT OR IGNORE INTO event_feedbacks (id, event_id, event_title, club_id, club_name, user_id, student_name, student_id, department, rating, comment, category, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const fb of INITIAL_EVENT_FEEDBACKS) {
+      insertFb.run(
+        fb.id,
+        fb.eventId,
+        fb.eventTitle,
+        fb.clubId,
+        fb.clubName,
+        fb.userId,
+        fb.studentName,
+        fb.studentId,
+        fb.department,
+        fb.rating,
+        fb.comment,
+        fb.category || 'General',
+        fb.createdAt
+      );
     }
 
   } catch (e) {
@@ -1371,106 +1365,6 @@ async function startServer() {
           return res.json({ success: true, message: 'Membership removed.', state: stateSnapshot });
         }
 
-        // --- 3b. DIRECT APPOINT CLUB EXECUTIVE / MODERATOR ---
-        case 'appoint-club-executive': {
-          const isSystemAdmin = currentUser.role === 'System_Admin';
-          const memberships = Array.isArray(currentUser.clubMemberships) ? currentUser.clubMemberships : [];
-          const isClubMod = memberships.some((m: any) => m.clubId === payload?.clubId && m.status === 'Active');
-
-          if (!isSystemAdmin && !isClubMod) {
-            return res.status(403).json({ error: 'Only System Administrators or club executives can appoint new executives.' });
-          }
-
-          const { clubId, targetUserId, studentId, designation = 'Executive Member' } = payload || {};
-          if (!clubId || (!targetUserId && !studentId)) {
-            return res.status(400).json({ error: 'Club ID and target user are required.' });
-          }
-
-          const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId) as any;
-          if (!club) return res.status(404).json({ error: 'Club not found.' });
-
-          const targetUser = (targetUserId ? db.prepare('SELECT * FROM users WHERE id = ?').get(targetUserId) : null)
-            || (studentId ? db.prepare('SELECT * FROM users WHERE student_id = ?').get(studentId) : null) as any;
-          if (!targetUser) return res.status(404).json({ error: 'Target student or user account not found.' });
-
-          // Update club's executives roster
-          const execs = JSON.parse(club.executives || '[]');
-          const filtered = execs.filter((e: any) => e.studentId !== targetUser.student_id);
-          filtered.push({
-            name: targetUser.name,
-            designation,
-            studentId: targetUser.student_id,
-            avatar: targetUser.avatar_url || `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(targetUser.name)}`
-          });
-          db.prepare('UPDATE clubs SET executives = ? WHERE id = ?').run(JSON.stringify(filtered), clubId);
-
-          // Elevate user role if Student
-          if (targetUser.role === 'Student') {
-            db.prepare("UPDATE users SET role = 'Club_Exec' WHERE id = ?").run(targetUser.id);
-          }
-
-          // Update club_memberships
-          let userMemberships = JSON.parse(targetUser.club_memberships || '[]');
-          userMemberships = userMemberships.filter((m: any) => m.clubId !== clubId);
-          userMemberships.push({
-            clubId,
-            roleName: designation,
-            status: 'Active'
-          });
-          db.prepare('UPDATE users SET club_memberships = ? WHERE id = ?').run(JSON.stringify(userMemberships), targetUser.id);
-
-          // Send notification
-          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
-          db.prepare(`
-            INSERT INTO notifications (id, title, message, type, target_roles, target_user_id, timestamp)
-            VALUES (?, ?, ?, 'Approval', ?, ?, ?)
-          `).run(
-            `NT-${Date.now()}`,
-            `👑 Executive Appointment: ${club.name}`,
-            `You have been officially appointed as "${designation}" of ${club.name}. Moderation permissions are now active.`,
-            JSON.stringify(['Student', 'Club_Exec']),
-            targetUser.id,
-            nowStr
-          );
-
-          const stateSnapshot = loadNormalizedAppState();
-          return res.json({ success: true, message: `Successfully appointed ${targetUser.name} as ${designation}.`, state: stateSnapshot });
-        }
-
-        // --- 3c. DIRECT REMOVE CLUB EXECUTIVE ---
-        case 'remove-club-executive': {
-          if (currentUser.role !== 'System_Admin') {
-            return res.status(403).json({ error: 'Only System Administrators can remove club executives.' });
-          }
-
-          const { clubId, studentId } = payload || {};
-          if (!clubId || !studentId) {
-            return res.status(400).json({ error: 'Club ID and student ID are required.' });
-          }
-
-          const club = db.prepare('SELECT * FROM clubs WHERE id = ?').get(clubId) as any;
-          if (!club) return res.status(404).json({ error: 'Club not found.' });
-
-          const execs = JSON.parse(club.executives || '[]');
-          const filtered = execs.filter((e: any) => e.studentId !== studentId);
-          db.prepare('UPDATE clubs SET executives = ? WHERE id = ?').run(JSON.stringify(filtered), clubId);
-
-          // Downgrade membership role if applicable
-          const targetUser = db.prepare('SELECT * FROM users WHERE student_id = ?').get(studentId) as any;
-          if (targetUser) {
-            let userMemberships = JSON.parse(targetUser.club_memberships || '[]');
-            userMemberships = userMemberships.map((m: any) => {
-              if (m.clubId === clubId) {
-                return { ...m, roleName: 'General Member' };
-              }
-              return m;
-            });
-            db.prepare('UPDATE users SET club_memberships = ? WHERE id = ?').run(JSON.stringify(userMemberships), targetUser.id);
-          }
-
-          const stateSnapshot = loadNormalizedAppState();
-          return res.json({ success: true, message: 'Executive removed successfully.', state: stateSnapshot });
-        }
 
         // --- 4. RSVP / PASS REGISTRATION ---
         case 'rsvp': {

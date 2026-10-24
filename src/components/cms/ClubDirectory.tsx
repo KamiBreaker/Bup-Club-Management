@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { Club, UserProfile, UserRole, MembershipApplication } from '../../types/cms';
+import { Club, UserProfile, UserRole, MembershipApplication, ClubEvent, EventFeedback } from '../../types/cms';
 import {
   Users,
   Search,
@@ -33,12 +33,15 @@ import {
   Layers,
   Edit3,
   Edit2,
-  LogIn
+  LogIn,
+  Star
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
 interface ClubDirectoryProps {
   clubs: Club[];
+  events?: ClubEvent[];
+  feedbacks?: EventFeedback[];
   currentUser: UserProfile;
   selectedRole: UserRole;
   applications?: MembershipApplication[];
@@ -61,10 +64,14 @@ interface ClubDirectoryProps {
   onAppointExecutive?: (clubId: string, targetUserId: string, designation: string) => Promise<void> | void;
   onRemoveExecutive?: (clubId: string, studentId: string) => Promise<void> | void;
   onRequireAuth?: () => void;
+  onNavigateToEvents?: () => void;
+  onNavigateToFeedbacks?: (eventId?: string) => void;
 }
 
 export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
   clubs,
+  events = [],
+  feedbacks = [],
   currentUser,
   selectedRole,
   applications = [],
@@ -77,7 +84,9 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
   onUpdateClub,
   onAppointExecutive,
   onRemoveExecutive,
-  onRequireAuth
+  onRequireAuth,
+  onNavigateToEvents,
+  onNavigateToFeedbacks
 }) => {
   const isSystemAdmin = selectedRole === 'System_Admin';
 
@@ -447,6 +456,168 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
         </div>
       </div>
 
+      {/* FEATURED SECTION: PAST EVENTS & SOCIETY ACHIEVEMENTS */}
+      <div className="rounded-3xl glass-panel p-6 sm:p-7 border border-amber-500/25 bg-gradient-to-br from-slate-900/95 via-slate-950 to-slate-900/90 relative overflow-hidden shadow-2xl space-y-6">
+        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10 border-b border-white/10 pb-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <span>Campus Hall of Fame & Historical Track Record</span>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-black text-white font-heading">
+              Past Events & Society Achievements
+            </h3>
+            <p className="text-slate-300 text-xs max-w-2xl leading-relaxed">
+              Explore national championship titles, research publications, hackathons, and landmark campus events organized by BUP accredited societies.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onNavigateToEvents && (
+              <button
+                type="button"
+                onClick={onNavigateToEvents}
+                className="flex items-center gap-1.5 text-xs font-bold text-teal-300 bg-teal-950/60 hover:bg-teal-900/80 px-3.5 py-2 rounded-xl border border-teal-500/30 transition-all cursor-pointer shadow-sm"
+              >
+                <Calendar className="w-3.5 h-3.5 text-teal-400" />
+                <span>Browse All Past Events</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Dual Grid: Left = Top Society Achievements, Right = Concluded Flagship Events */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10">
+          {/* Column 1: Notable Society Achievements */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/70 border border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-300 font-extrabold text-xs uppercase tracking-wider">
+                <Award className="w-4 h-4 text-amber-400" />
+                <span>Flagship Society Achievements</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400">
+                {(clubs ?? []).reduce((acc, c) => acc + (c.achievements?.length || 0), 0)} Total Honors
+              </span>
+            </div>
+
+            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+              {(clubs ?? []).flatMap((c) =>
+                (c.achievements || []).map((ach, idx) => ({
+                  club: c,
+                  achievement: ach,
+                  key: `${c.id}-${idx}`
+                }))
+              ).slice(0, 5).map(({ club: c, achievement, key }) => (
+                <div
+                  key={key}
+                  onClick={() => setActiveClubModal(c)}
+                  className="flex items-start gap-3 p-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer group"
+                >
+                  <img
+                    src={c.logoUrl}
+                    alt={c.name}
+                    className="w-9 h-9 rounded-xl object-cover ring-1 ring-amber-400/40 bg-slate-800 shrink-0 mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider">
+                        {c.code}
+                      </span>
+                      <span className="text-[9px] font-mono text-slate-400">{c.category}</span>
+                    </div>
+                    <p className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors leading-snug">
+                      {achievement}
+                    </p>
+                    <span className="text-[10px] text-slate-400 truncate block mt-0.5">
+                      {c.name}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Column 2: Past Flagship Events */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/70 border border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-teal-300 font-extrabold text-xs uppercase tracking-wider">
+                <Calendar className="w-4 h-4 text-teal-400" />
+                <span>Concluded Flagship Campus Events</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400">
+                {(events || []).filter((e) => e.status === 'Completed' || (e.date && new Date(e.date) < new Date())).length} Events
+              </span>
+            </div>
+
+            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+              {(events || [])
+                .filter((e) => e.status === 'Completed' || (e.date && new Date(e.date) < new Date()))
+                .slice(0, 4)
+                .map((pe) => {
+                  const evtFeedbacks = (feedbacks || []).filter((fb) => fb.eventId === pe.id);
+                  const avgRating = evtFeedbacks.length > 0
+                    ? (evtFeedbacks.reduce((a, b) => a + b.rating, 0) / evtFeedbacks.length).toFixed(1)
+                    : null;
+
+                  return (
+                    <div
+                      key={pe.id}
+                      className="p-3 rounded-xl bg-slate-900/80 hover:bg-slate-800/90 border border-teal-500/20 hover:border-teal-500/40 transition-all flex flex-col justify-between group"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-300 border border-teal-500/30">
+                              {pe.category}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              {pe.date}
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-bold text-white group-hover:text-teal-300 transition-colors line-clamp-1">
+                            {pe.title}
+                          </h4>
+                          <span className="text-[10px] text-slate-400 block truncate">
+                            {pe.clubName} • {pe.venueName}
+                          </span>
+                        </div>
+
+                        <span className="text-[10px] font-mono font-bold bg-slate-950 px-2 py-1 rounded-lg text-emerald-300 border border-emerald-500/30 shrink-0">
+                          {pe.registeredCount} Turned Out
+                        </span>
+                      </div>
+
+                      <div className="pt-2 mt-1 border-t border-white/5 flex items-center justify-between text-[10px]">
+                        {avgRating ? (
+                          <span className="text-amber-300 font-bold flex items-center gap-1">
+                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            <span>{avgRating} ({evtFeedbacks.length} reviews)</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">Concluded</span>
+                        )}
+
+                        {onNavigateToFeedbacks && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToFeedbacks(pe.id)}
+                            className="text-teal-300 hover:text-teal-200 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                          >
+                            <span>Read Reviews</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Clubs Grid */}
       <motion.div
         variants={containerVariants}
@@ -569,6 +740,18 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                     )}
                   </div>
 
+                  {club.achievements && club.achievements.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 rounded-xl">
+                      <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="truncate font-semibold">{club.achievements[0]}</span>
+                      {club.achievements.length > 1 && (
+                        <span className="text-[9px] bg-amber-400/25 text-amber-200 px-1.5 py-0.2 rounded-full font-bold shrink-0">
+                          +{club.achievements.length - 1}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400 font-medium">
                     <span className="flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-emerald-400" />
@@ -591,11 +774,16 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                   }}
                   className="text-xs text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 hover:underline transition-all"
                 >
-                  <span>Execs & Details</span>
+                  <span>Execs, Past Events & Details</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </button>
 
-                {membershipStatus === 'Active' ? (
+                {isGuest ? (
+                  <span className="text-[11px] font-semibold text-slate-400 bg-slate-900/80 px-2.5 py-1.5 rounded-xl border border-white/5 flex items-center gap-1.5 shadow-sm">
+                    <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Public Directory</span>
+                  </span>
+                ) : membershipStatus === 'Active' ? (
                   <button
                     onClick={() => {
                       soundFx.playClick();
@@ -950,19 +1138,138 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                     </div>
                   )}
 
-                  {activeClubModal.achievements && activeClubModal.achievements.length > 0 && (
-                    <div className="p-4 rounded-2xl bg-slate-900/70 border border-white/10 space-y-2">
-                      <div className="flex items-center gap-1.5 text-amber-300 font-bold text-[11px] uppercase tracking-wider">
-                        <Trophy className="w-4 h-4 text-amber-300" />
-                        <span>Key Achievements</span>
+                </div>
+
+                {/* DEDICATED SECTION: ACHIEVEMENTS & PAST EVENTS */}
+                <div className="space-y-4">
+                  {/* Hall of Achievements & Honors */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-slate-900/90 to-slate-950 border border-amber-500/30 space-y-3 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-amber-300 font-black text-xs uppercase tracking-wider">
+                        <Trophy className="w-4 h-4 text-amber-400" />
+                        <span>🏆 Hall of Achievements & Honors</span>
                       </div>
-                      <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
-                        {activeClubModal.achievements.map((ach, i) => (
-                          <li key={i}>{ach}</li>
-                        ))}
-                      </ul>
+                      {isModeratorForClub(activeClubModal.id) && onUpdateClub && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditClub(activeClubModal)}
+                          className="text-[11px] text-amber-300 hover:text-amber-200 font-bold flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 px-2.5 py-1 rounded-xl border border-amber-500/30 transition-all cursor-pointer"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Edit Achievements</span>
+                        </button>
+                      )}
                     </div>
-                  )}
+
+                    {activeClubModal.achievements && activeClubModal.achievements.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {activeClubModal.achievements.map((ach, i) => (
+                          <div
+                            key={i}
+                            className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/80 border border-amber-500/20 shadow-sm"
+                          >
+                            <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-300 shrink-0 mt-0.5">
+                              <Award className="w-3.5 h-3.5" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-white leading-snug">{ach}</p>
+                              <span className="text-[10px] text-amber-400/80 font-mono">Accredited Society Distinction</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">No formal achievements listed yet for this society.</p>
+                    )}
+                  </div>
+
+                  {/* Past Events & Historical Milestones */}
+                  <div className="p-5 rounded-2xl bg-slate-900/80 border border-teal-500/30 space-y-3 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-teal-300 font-black text-xs uppercase tracking-wider">
+                        <Calendar className="w-4 h-4 text-teal-400" />
+                        <span>📅 Past Events & Landmark Milestones</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-white/5">
+                        {(() => {
+                          const pastEvts = (events || []).filter(
+                            (e) => e.clubId === activeClubModal.id && (e.status === 'Completed' || (e.date && new Date(e.date) < new Date()))
+                          );
+                          return `${pastEvts.length} Concluded`;
+                        })()}
+                      </span>
+                    </div>
+
+                    {(() => {
+                      const pastEvts = (events || []).filter(
+                        (e) => e.clubId === activeClubModal.id && (e.status === 'Completed' || (e.date && new Date(e.date) < new Date()))
+                      );
+
+                      if (pastEvts.length === 0) {
+                        return (
+                          <div className="p-4 rounded-xl bg-slate-950/40 border border-dashed border-white/10 text-center space-y-1">
+                            <p className="text-xs text-slate-300 font-medium">No past events recorded yet for this academic year.</p>
+                            <p className="text-[11px] text-slate-500">Upcoming flagship events will appear here once successfully concluded.</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {pastEvts.map((pe) => {
+                            const clubFeedbacks = (feedbacks || []).filter((fb) => fb.eventId === pe.id);
+                            const avgRating = clubFeedbacks.length > 0
+                              ? (clubFeedbacks.reduce((acc, curr) => acc + curr.rating, 0) / clubFeedbacks.length).toFixed(1)
+                              : null;
+
+                            return (
+                              <div
+                                key={pe.id}
+                                className="p-3.5 rounded-xl bg-slate-950/70 border border-white/10 hover:border-teal-500/40 transition-all flex flex-col justify-between space-y-2 group"
+                              >
+                                <div>
+                                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                                    <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                                      {pe.category}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-slate-400" />
+                                      <span>{pe.date}</span>
+                                    </span>
+                                  </div>
+                                  <h5 className="font-bold text-white text-xs leading-snug line-clamp-1 group-hover:text-teal-300 transition-colors">
+                                    {pe.title}
+                                  </h5>
+                                  <p className="text-[11px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">
+                                    {pe.description}
+                                  </p>
+                                </div>
+
+                                <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px]">
+                                  <span className="text-slate-300 font-mono flex items-center gap-1">
+                                    <Users className="w-3 h-3 text-emerald-400" />
+                                    <span>{pe.registeredCount} Turnout</span>
+                                  </span>
+
+                                  {avgRating ? (
+                                    <span className="text-amber-300 font-bold flex items-center gap-1">
+                                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                      <span>{avgRating} ({clubFeedbacks.length} reviews)</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-500 flex items-center gap-1">
+                                      <CheckCircle className="w-3 h-3 text-teal-400" />
+                                      <span>Concluded</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
 
                 {/* Faculty Advisor */}
@@ -1096,7 +1403,27 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                     </button>
                   ) : <div />}
 
-                  {getMembershipStatus(activeClubModal.id) === 'Active' ? (
+                  {isGuest ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-400 bg-slate-900/80 px-3.5 py-2 rounded-xl border border-white/5 flex items-center gap-1.5 shadow-sm">
+                        <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Public Directory View</span>
+                      </span>
+                      {onRequireAuth && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveClubModal(null);
+                            onRequireAuth();
+                          }}
+                          className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-md cursor-pointer"
+                        >
+                          <LogIn className="w-3.5 h-3.5" />
+                          <span>Sign in to Apply</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : getMembershipStatus(activeClubModal.id) === 'Active' ? (
                     <span className="text-emerald-400 font-bold flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4" />
                       <span>You are an official active member</span>

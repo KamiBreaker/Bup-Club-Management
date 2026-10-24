@@ -69,7 +69,7 @@ export const EventHub: React.FC<EventHubProps> = ({
   onOpenFeedbacks,
   onRequireAuth
 }) => {
-  const [activeTab, setActiveTab] = useState<'All' | 'Upcoming' | 'Registered'>('All');
+  const [activeTab, setActiveTab] = useState<'All' | 'Upcoming' | 'Past' | 'Registered'>('All');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [activeQrModal, setActiveQrModal] = useState<ClubEvent | null>(null);
   const [activeRosterModal, setActiveRosterModal] = useState<ClubEvent | null>(null);
@@ -207,8 +207,10 @@ export const EventHub: React.FC<EventHubProps> = ({
     if (!evt) return false;
     const matchesCategory = selectedCategory === 'All' || evt.category === selectedCategory;
     const isUserRegistered = !isGuest && (evt.registeredUserIds ?? []).includes(currentUser?.id || '');
+    const isPastEvent = evt.status === 'Completed' || (evt.date && new Date(evt.date) < new Date());
 
-    if (activeTab === 'Upcoming') return matchesCategory && evt.status === 'Upcoming';
+    if (activeTab === 'Upcoming') return matchesCategory && evt.status === 'Upcoming' && !isPastEvent;
+    if (activeTab === 'Past') return matchesCategory && isPastEvent;
     if (activeTab === 'Registered') return matchesCategory && isUserRegistered;
 
     return matchesCategory;
@@ -406,7 +408,7 @@ export const EventHub: React.FC<EventHubProps> = ({
       {/* Tabs & Category Filter */}
       <div className="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col lg:flex-row gap-4 justify-between items-center">
         <div className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl border border-white/5">
-          {(['All', 'Upcoming', 'Registered'] as const).map((tab) => {
+          {(['All', 'Upcoming', 'Past', 'Registered'] as const).map((tab) => {
             const isSelected = activeTab === tab;
             return (
               <button
@@ -421,6 +423,7 @@ export const EventHub: React.FC<EventHubProps> = ({
               >
                 {tab === 'All' && `All Events (${(events ?? []).length})`}
                 {tab === 'Upcoming' && 'Upcoming Calendar'}
+                {tab === 'Past' && 'Past Events & Milestones'}
                 {tab === 'Registered' && 'My Registered Passes'}
               </button>
             );
@@ -494,11 +497,16 @@ export const EventHub: React.FC<EventHubProps> = ({
 
                     return (
                       <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
-                        {evt.registrationDeadline && (
+                        {evt.status === 'Completed' || (evt.date && new Date(evt.date) < new Date()) ? (
+                          <span className="text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-lg border border-amber-500/40 backdrop-blur-md flex items-center gap-1 shadow-sm">
+                            <CheckCircle2 className="w-3 h-3 text-amber-400" />
+                            <span>Completed Milestone</span>
+                          </span>
+                        ) : evt.registrationDeadline ? (
                           <span className="text-[10px] font-mono font-bold bg-slate-950/85 text-emerald-300 px-2.5 py-1 rounded-lg border border-emerald-500/30 backdrop-blur-md">
                             Deadline: {evt.registrationDeadline}
                           </span>
-                        )}
+                        ) : null}
                         {canEditThisEvent && onUpdateEvent && (
                           <button
                             type="button"
@@ -667,7 +675,24 @@ export const EventHub: React.FC<EventHubProps> = ({
               {/* Action Bar */}
               <div className="p-4 bg-slate-950/60 border-t border-white/10 flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  {isGuest ? (
+                  {evt.status === 'Completed' || (evt.date && new Date(evt.date) < new Date()) ? (
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <span className="text-xs font-bold text-slate-300 bg-slate-900/90 border border-white/10 px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Event Concluded</span>
+                      </span>
+                      {onOpenFeedbacks && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenFeedbacks(evt.id)}
+                          className="text-xs font-bold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                        >
+                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                          <span>{isGuest ? 'View Feedbacks' : 'Reviews & Feedback'}</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : isGuest ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -737,6 +762,20 @@ export const EventHub: React.FC<EventHubProps> = ({
           );
         })}
       </div>
+
+      {filteredEvents.length === 0 && (
+        <div className="p-12 text-center rounded-3xl bg-slate-900/40 border border-dashed border-white/10 space-y-3">
+          <Calendar className="w-10 h-10 text-slate-500 mx-auto" />
+          <h4 className="font-bold text-white text-base">No Events Found</h4>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            {activeTab === 'Past'
+              ? 'No concluded past events recorded under this category filter.'
+              : activeTab === 'Registered'
+              ? 'You have not registered for any events in this category.'
+              : 'No upcoming events currently scheduled under this category.'}
+          </p>
+        </div>
+      )}
 
       {/* EXECUTIVE ROSTER & GATE CHECK-IN MODAL */}
       <AnimatePresence>

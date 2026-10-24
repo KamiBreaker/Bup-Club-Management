@@ -886,6 +886,8 @@ export default function App() {
                   <ErrorBoundary fallbackTitle="Club Directory Component">
                     <ClubDirectory
                       clubs={clubs}
+                      events={events}
+                      feedbacks={feedbacks}
                       currentUser={currentUser}
                       selectedRole={selectedRole}
                       applications={applications}
@@ -899,6 +901,8 @@ export default function App() {
                       onRemoveExecutive={handleRemoveExecutive}
                       isGuest={isGuestMode}
                       onRequireAuth={() => setIsGuestMode(false)}
+                      onNavigateToEvents={() => setActiveCmsTab('events')}
+                      onNavigateToFeedbacks={(eventId) => setActiveCmsTab('feedbacks')}
                     />
                   </ErrorBoundary>
                 </motion.div>
