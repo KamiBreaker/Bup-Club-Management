@@ -1145,6 +1145,191 @@ async function startServer() {
   });
 
   // -----------------------------------------------------------------
+  // CLUB LEADERSHIP, MODERATOR & SUB-EXECUTIVE REPORT API
+  // -----------------------------------------------------------------
+  app.get('/api/clubs/:id/leadership-report', (req, res) => {
+    try {
+      const { id } = req.params;
+      const format = req.query.format as string;
+
+      const clubRow = db.prepare('SELECT * FROM clubs WHERE id = ?').get(id) as any;
+      if (!clubRow) {
+        return res.status(404).json({ error: 'Club not found.' });
+      }
+
+      const facultyAdvisor = JSON.parse(clubRow.faculty_advisor || '{}');
+      const executives = JSON.parse(clubRow.executives || '[]');
+      const appRows = db.prepare('SELECT * FROM membership_applications WHERE club_id = ? ORDER BY application_date DESC').all(id) as any[];
+      const eventRows = db.prepare('SELECT * FROM events WHERE club_id = ? ORDER BY date DESC').all(id) as any[];
+      const attRows = db.prepare(`
+        SELECT a.*, e.club_id, e.title as event_title 
+        FROM attendance a 
+        JOIN events e ON a.event_id = e.id 
+        WHERE e.club_id = ?
+        ORDER BY a.marked_at DESC
+      `).all(id) as any[];
+
+      const officers: any[] = [];
+
+      // 1. Faculty Advisor (Moderator)
+      if (facultyAdvisor.name) {
+        const advName = facultyAdvisor.name;
+        const matchedApps = appRows.filter(
+          (a) =>
+            a.decision_by &&
+            (a.decision_by.toLowerCase().includes(advName.toLowerCase()) ||
+              a.decision_by.toLowerCase().includes('advisor') ||
+              a.decision_by.toLowerCase().includes('moderator'))
+        );
+        const matchedQuestions = appRows.filter(
+          (a) =>
+            a.question_asked_by &&
+            (a.question_asked_by.toLowerCase().includes(advName.toLowerCase()) ||
+              a.question_asked_by.toLowerCase().includes('advisor') ||
+              a.question_asked_by.toLowerCase().includes('moderator'))
+        );
+
+        officers.push({
+          name: advName,
+          designation: facultyAdvisor.designation || 'Faculty Advisor & Chief Moderator',
+          roleType: 'Faculty_Advisor',
+          studentId: 'FACULTY-REF',
+          email: facultyAdvisor.email || '',
+          department: clubRow.department,
+          decisionsCount: matchedApps.length,
+          questionsCount: matchedQuestions.length,
+          eventsSupervised: eventRows.length,
+          activityScore: matchedApps.length * 10 + matchedQuestions.length * 5 + eventRows.length * 15
+        });
+      }
+
+      // 2. Executives & Sub-Executives
+      executives.forEach((exec: any) => {
+        const execName = exec.name;
+        const execId = exec.studentId;
+        const designation = exec.designation || 'Executive Member';
+        const lowerDesig = designation.toLowerCase();
+        const roleType = lowerDesig.includes('moderator')
+          ? 'Moderator'
+          : lowerDesig.includes('sub-executive') || lowerDesig.includes('sub executive')
+          ? 'Sub-Executive'
+          : 'Executive';
+
+        const matchedApps = appRows.filter(
+          (a) =>
+            a.decision_by &&
+            (a.decision_by.toLowerCase().includes(execName.toLowerCase()) ||
+              a.decision_by.includes(execId) ||
+              a.decision_by.toLowerCase().includes(designation.toLowerCase()))
+        );
+
+        const matchedQuestions = appRows.filter(
+          (a) =>
+            a.question_asked_by &&
+            (a.question_asked_by.toLowerCase().includes(execName.toLowerCase()) ||
+              a.question_asked_by.includes(execId))
+        );
+
+        const matchedGate = attRows.filter(
+          (att) =>
+            att.marked_by &&
+            (att.marked_by.toLowerCase().includes(execName.toLowerCase()) ||
+              att.marked_by.includes(execId) ||
+              att.marked_by.toLowerCase().includes('usher'))
+        );
+
+        officers.push({
+          name: execName,
+          designation,
+          roleType,
+          studentId: execId,
+          email: `${execId}@bup.edu.bd`,
+          department: clubRow.department,
+          decisionsCount: matchedApps.length,
+          questionsCount: matchedQuestions.length,
+          gateVerificationsCount: matchedGate.length,
+          eventsSupervised: eventRows.length,
+          activityScore: matchedApps.length * 10 + matchedQuestions.length * 8 + matchedGate.length * 2 + eventRows.length * 15
+        });
+      });
+
+      const reportData = {
+        reportRef: `BUP-LEAD-${clubRow.code}-${new Date().getFullYear()}`,
+        generatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        club: {
+          id: clubRow.id,
+          code: clubRow.code,
+          name: clubRow.name,
+          category: clubRow.category,
+          department: clubRow.department,
+          facultyAdvisor,
+          memberCount: clubRow.member_count
+        },
+        summary: {
+          totalOfficers: officers.length,
+          moderatorCount: officers.filter((o) => o.roleType === 'Moderator' || o.roleType === 'Faculty_Advisor').length,
+          subExecCount: officers.filter((o) => o.roleType === 'Sub-Executive').length,
+          execCount: officers.filter((o) => o.roleType === 'Executive').length,
+          totalApplicationsAudited: appRows.length,
+          totalGateVerifications: attRows.length,
+          totalEventsSupervised: eventRows.length
+        },
+        officers,
+        recentDecisions: appRows.slice(0, 20).map((a, idx) => ({
+          slNo: idx + 1,
+          applicantName: a.applicant_name,
+          studentId: a.student_id,
+          roleName: a.role_name,
+          status: a.status,
+          decisionBy: a.decision_by,
+          decisionDate: a.decision_date,
+          remarks: a.decision_remarks
+        }))
+      };
+
+      if (format === 'excel') {
+        const wb = XLSX.utils.book_new();
+
+        // Sheet 1: Summary
+        const summaryRows = [
+          ['BANGLADESH UNIVERSITY OF PROFESSIONALS (BUP)'],
+          ['CLUB LEADERSHIP, MODERATOR & SUB-EXECUTIVE ACTIVITY AUDIT REPORT'],
+          ['Report Ref:', reportData.reportRef],
+          ['Audit Timestamp:', reportData.generatedAt],
+          ['Club:', `${reportData.club.name} (${reportData.club.code})`],
+          ['Faculty Advisor:', reportData.club.facultyAdvisor?.name || 'N/A'],
+          ['Total Officers:', reportData.summary.totalOfficers],
+          ['Moderators:', reportData.summary.moderatorCount],
+          ['Sub-Executives:', reportData.summary.subExecCount],
+          ['Executives:', reportData.summary.execCount],
+          ['Total Applications Audited:', reportData.summary.totalApplicationsAudited],
+          ['Total Gate Shifts Logged:', reportData.summary.totalGateVerifications],
+          ['Total Events Supervised:', reportData.summary.totalEventsSupervised]
+        ];
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Governance Overview');
+
+        // Sheet 2: Officers
+        const wsOfficers = XLSX.utils.json_to_sheet(reportData.officers);
+        XLSX.utils.book_append_sheet(wb, wsOfficers, 'Officers & Activity Stats');
+
+        // Sheet 3: Decisions
+        const wsDec = XLSX.utils.json_to_sheet(reportData.recentDecisions);
+        XLSX.utils.book_append_sheet(wb, wsDec, 'Membership Decisions Log');
+
+        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="BUP_Leadership_Report_${clubRow.code}.xlsx"`);
+        return res.send(buffer);
+      }
+
+      return res.json({ report: reportData });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to generate leadership report', details: err.message });
+    }
+  });
+
+  // -----------------------------------------------------------------
   // SYSTEM REST ACTIONS WITH DIRECT SQLITE NORMALIZATION & RBAC
   // -----------------------------------------------------------------
   app.post('/api/app-state/update', requireAuth, (req, res) => {

@@ -891,6 +891,9 @@ export default function App() {
                       currentUser={currentUser}
                       selectedRole={selectedRole}
                       applications={applications}
+                      attendance={attendance}
+                      announcements={announcements}
+                      users={userProfiles}
                       onApplyForMembership={handleApplyForMembership}
                       onJoinClub={handleJoinClub}
                       onLeaveClub={handleLeaveClub}
@@ -1003,6 +1006,9 @@ export default function App() {
                       users={userProfiles}
                       currentUser={currentUser}
                       selectedRole={selectedRole}
+                      attendance={attendance}
+                      events={events}
+                      announcements={announcements}
                       onReviewApplication={handleReviewApplication}
                       onRequestApplicationInfo={handleRequestApplicationInfo}
                       onRespondQna={handleRespondQna}

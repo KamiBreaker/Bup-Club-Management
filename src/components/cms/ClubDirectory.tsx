@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { Club, UserProfile, UserRole, MembershipApplication, ClubEvent, EventFeedback } from '../../types/cms';
+import {
+  Club,
+  UserProfile,
+  UserRole,
+  MembershipApplication,
+  ClubEvent,
+  EventFeedback,
+  AttendanceRecord,
+  ClubAnnouncement
+} from '../../types/cms';
+import { LeadershipReportModal } from './LeadershipReportModal';
 import {
   Users,
   Search,
@@ -34,7 +44,9 @@ import {
   Edit3,
   Edit2,
   LogIn,
-  Star
+  Star,
+  FileSpreadsheet,
+  Crown
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -45,6 +57,9 @@ interface ClubDirectoryProps {
   currentUser: UserProfile;
   selectedRole: UserRole;
   applications?: MembershipApplication[];
+  attendance?: AttendanceRecord[];
+  announcements?: ClubAnnouncement[];
+  users?: UserProfile[];
   isGuest?: boolean;
   onApplyForMembership: (
     clubId: string,
@@ -75,6 +90,9 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
   currentUser,
   selectedRole,
   applications = [],
+  attendance = [],
+  announcements = [],
+  users = [],
   isGuest = false,
   onApplyForMembership,
   onJoinClub,
@@ -95,6 +113,11 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
   const [activeClubModal, setActiveClubModal] = useState<Club | null>(null);
   const [applyingClub, setApplyingClub] = useState<Club | null>(null);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+
+  // Leadership & Moderator Activity Report Modal State
+  const [isLeadershipModalOpen, setIsLeadershipModalOpen] = useState(false);
+  const [selectedLeadershipReportClub, setSelectedLeadershipReportClub] = useState<Club | null>(null);
+  const [selectedOfficerDossierId, setSelectedOfficerDossierId] = useState<string | null>(null);
 
   // Helper to check if current user has moderator/editing authority for a club
   const isModeratorForClub = (clubId: string) => {
@@ -1318,20 +1341,36 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
 
                 {/* Executive Roster */}
                 <div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h4 className="font-bold text-emerald-400 uppercase tracking-wider text-[11px]">
                       Executive Committee Roster
                     </h4>
-                    {isModeratorForClub(activeClubModal.id) && onUpdateClub && (
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleOpenEditClub(activeClubModal)}
-                        className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer"
+                        onClick={() => {
+                          soundFx.playClick();
+                          setSelectedLeadershipReportClub(activeClubModal);
+                          setSelectedOfficerDossierId(null);
+                          setIsLeadershipModalOpen(true);
+                        }}
+                        className="text-xs text-amber-300 hover:text-amber-200 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        title="Generate Leadership, Moderator & Sub-Executive Activity Report (Excel or PDF)"
                       >
-                        <Edit3 className="w-3 h-3" />
-                        <span>Edit Society Details</span>
+                        <Crown className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Executive & Moderator Report</span>
                       </button>
-                    )}
+                      {isModeratorForClub(activeClubModal.id) && onUpdateClub && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditClub(activeClubModal)}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Edit Details</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {(activeClubModal.executives ?? []).length === 0 ? (
@@ -1358,28 +1397,43 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
                             </div>
                           </div>
 
-                          {isModeratorForClub(activeClubModal.id) && onRemoveExecutive && (
+                          <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              title="Remove from Executive Committee"
+                              title={`View activity dossier & audit for ${exec.name}`}
                               onClick={() => {
-                                if (confirm(`Remove ${exec.name} from the executive panel of ${activeClubModal.name}?`)) {
-                                  onRemoveExecutive(activeClubModal.id, exec.studentId);
-                                  setActiveClubModal((prev) =>
-                                    prev
-                                      ? {
-                                          ...prev,
-                                          executives: prev.executives.filter((e) => e.studentId !== exec.studentId)
-                                        }
-                                      : null
-                                  );
-                                }
+                                soundFx.playClick();
+                                setSelectedLeadershipReportClub(activeClubModal);
+                                setSelectedOfficerDossierId(exec.studentId);
+                                setIsLeadershipModalOpen(true);
                               }}
-                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition cursor-pointer shrink-0"
+                              className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition cursor-pointer"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <FileSpreadsheet className="w-3.5 h-3.5" />
                             </button>
-                          )}
+                            {isModeratorForClub(activeClubModal.id) && onRemoveExecutive && (
+                              <button
+                                type="button"
+                                title="Remove from Executive Committee"
+                                onClick={() => {
+                                  if (confirm(`Remove ${exec.name} from the executive panel of ${activeClubModal.name}?`)) {
+                                    onRemoveExecutive(activeClubModal.id, exec.studentId);
+                                    setActiveClubModal((prev) =>
+                                      prev
+                                        ? {
+                                            ...prev,
+                                            executives: prev.executives.filter((e) => e.studentId !== exec.studentId)
+                                          }
+                                        : null
+                                    );
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition cursor-pointer shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2038,6 +2092,26 @@ export const ClubDirectory: React.FC<ClubDirectoryProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* LEADERSHIP, MODERATOR & SUB-EXECUTIVE ACTIVITY AUDIT MODAL */}
+      {isLeadershipModalOpen && (
+        <LeadershipReportModal
+          club={selectedLeadershipReportClub}
+          clubs={clubs}
+          applications={applications}
+          attendance={attendance}
+          events={events}
+          announcements={announcements}
+          users={users}
+          currentUser={currentUser}
+          initialOfficerStudentId={selectedOfficerDossierId}
+          isOpen={isLeadershipModalOpen}
+          onClose={() => {
+            setIsLeadershipModalOpen(false);
+            setSelectedOfficerDossierId(null);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -5,8 +5,12 @@ import {
   MembershipApplication,
   Club,
   UserProfile,
-  UserRole
+  UserRole,
+  AttendanceRecord,
+  ClubEvent,
+  ClubAnnouncement
 } from '../../types/cms';
+import { LeadershipReportModal } from './LeadershipReportModal';
 import {
   Users,
   CheckCircle2,
@@ -36,7 +40,9 @@ import {
   Award,
   UserPlus,
   Trash2,
-  Edit3
+  Edit3,
+  FileSpreadsheet,
+  Crown
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -46,6 +52,9 @@ interface MembershipHubProps {
   users: UserProfile[];
   currentUser: UserProfile;
   selectedRole: UserRole;
+  attendance?: AttendanceRecord[];
+  events?: ClubEvent[];
+  announcements?: ClubAnnouncement[];
   onReviewApplication: (applicationId: string, status: 'Approved' | 'Rejected', remarks?: string) => void;
   onRequestApplicationInfo?: (applicationId: string, question: string) => Promise<void> | void;
   onRespondQna?: (applicationId: string, answer: string) => Promise<void> | void;
@@ -61,6 +70,9 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
   users = [],
   currentUser,
   selectedRole,
+  attendance = [],
+  events = [],
+  announcements = [],
   onReviewApplication,
   onRequestApplicationInfo,
   onRespondQna,
@@ -89,6 +101,11 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
   const [appointUserId, setAppointUserId] = useState('');
   const [appointDesignation, setAppointDesignation] = useState('Club Moderator');
   const [isSubmittingAppoint, setIsSubmittingAppoint] = useState(false);
+
+  // Leadership & Moderator Activity Report Modal State
+  const [isLeadershipReportOpen, setIsLeadershipReportOpen] = useState(false);
+  const [reportTargetClub, setReportTargetClub] = useState<Club | null>(null);
+  const [reportTargetOfficerId, setReportTargetOfficerId] = useState<string | null>(null);
 
   // Student In-line Q&A Answers (for My Applications tab)
   const [studentAnswerDrafts, setStudentAnswerDrafts] = useState<{ [appId: string]: string }>({});
@@ -347,7 +364,21 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
         </div>
 
         {activeTab !== 'my-applications' && (
-          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+          <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                setReportTargetClub(selectedClubId === 'All' ? null : clubs.find((c) => c.id === selectedClubId) || null);
+                setReportTargetOfficerId(null);
+                setIsLeadershipReportOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/30 transition-all shadow-sm cursor-pointer"
+              title="Generate Leadership, Moderator & Sub-Executive Activity Report (Excel or PDF)"
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>Leadership & Moderator Report</span>
+            </button>
             <button
               onClick={exportRosterCsv}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold border border-emerald-500/30 transition-all shadow-sm cursor-pointer"
@@ -694,19 +725,35 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
                 </p>
               </div>
 
-              {isExecutiveOrAdmin && onAppointExecutive && (
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => {
                     soundFx.playClick();
-                    setIsAppointModalOpen(true);
+                    setReportTargetClub(selectedClubId === 'All' ? null : clubs.find((c) => c.id === selectedClubId) || null);
+                    setReportTargetOfficerId(null);
+                    setIsLeadershipReportOpen(true);
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 font-black text-xs transition-all shadow-lg shadow-amber-950/40 flex items-center gap-2 cursor-pointer shrink-0"
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-amber-500/30 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-md"
+                  title="Generate comprehensive Leadership, Moderator & Sub-Executive Report (PDF or Excel)"
                 >
-                  <UserPlus className="w-4 h-4" />
-                  <span>+ Appoint Executive / Moderator</span>
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                  <span>Leadership Activity Report (PDF / Excel)</span>
                 </button>
-              )}
+                {isExecutiveOrAdmin && onAppointExecutive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setIsAppointModalOpen(true);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 font-black text-xs transition-all shadow-lg shadow-amber-950/40 flex items-center gap-2 cursor-pointer shrink-0"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>+ Appoint Executive / Moderator</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* List of Executives by Club */}
@@ -777,6 +824,19 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
                               </div>
 
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                <button
+                                  type="button"
+                                  title={`View activity dossier & audit report for ${exec.name}`}
+                                  onClick={() => {
+                                    soundFx.playClick();
+                                    setReportTargetClub(club);
+                                    setReportTargetOfficerId(exec.studentId);
+                                    setIsLeadershipReportOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-all cursor-pointer"
+                                >
+                                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                                </button>
                                 {(selectedRole === 'System_Admin' || isModeratorForClub(club.id)) && onUpdateExecutiveRole && (
                                   <button
                                     type="button"
@@ -1491,6 +1551,26 @@ export const MembershipHub: React.FC<MembershipHubProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* LEADERSHIP, MODERATOR & SUB-EXECUTIVE ACTIVITY AUDIT MODAL */}
+      {isLeadershipReportOpen && (
+        <LeadershipReportModal
+          club={reportTargetClub}
+          clubs={clubs}
+          applications={applications}
+          attendance={attendance}
+          events={events}
+          announcements={announcements}
+          users={users}
+          currentUser={currentUser}
+          initialOfficerStudentId={reportTargetOfficerId}
+          isOpen={isLeadershipReportOpen}
+          onClose={() => {
+            setIsLeadershipReportOpen(false);
+            setReportTargetOfficerId(null);
+          }}
+        />
+      )}
     </div>
   );
 };

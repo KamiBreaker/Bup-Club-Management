@@ -443,4 +443,29 @@ test.describe('BUP-CMS Automated Use Case Test Suite (Playwright)', () => {
     const excelBuffer = await excelRes.body();
     expect(excelBuffer.length).toBeGreaterThan(1000);
   });
+
+  test('TC-21: [UC-REP-02] Moderator & sub-executive leadership activity audit report generation', async () => {
+    // 1. Fetch JSON leadership report for CLUB-02 (Robotics & Research Club)
+    const reportRes = await adminContext.get(`${BASE_URL}/api/clubs/CLUB-02/leadership-report`);
+    expect(reportRes.ok()).toBeTruthy();
+    const data = await reportRes.json();
+    expect(data.report).toBeDefined();
+    expect(data.report.reportRef).toContain('BUP-LEAD-BUPRRC');
+    expect(data.report.club.code).toBe('BUPRRC');
+    expect(data.report.summary).toBeDefined();
+    expect(data.report.summary.totalOfficers).toBeGreaterThan(0);
+    expect(Array.isArray(data.report.officers)).toBe(true);
+
+    // Verify presence of moderators and executives
+    const advisor = data.report.officers.find((o: any) => o.roleType === 'Faculty_Advisor');
+    expect(advisor).toBeDefined();
+    expect(advisor.name).toBeDefined();
+
+    // 2. Fetch Excel format export
+    const excelRes = await adminContext.get(`${BASE_URL}/api/clubs/CLUB-02/leadership-report?format=excel`);
+    expect(excelRes.ok()).toBeTruthy();
+    expect(excelRes.headers()['content-type']).toContain('spreadsheetml.sheet');
+    const excelBuffer = await excelRes.body();
+    expect(excelBuffer.length).toBeGreaterThan(1000);
+  });
 });
