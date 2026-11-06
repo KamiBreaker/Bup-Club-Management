@@ -5,10 +5,13 @@ import {
   EventFeedback,
   ClubEvent,
   Club,
+  Venue,
   UserProfile,
   UserRole,
-  EventRegistration
+  EventRegistration,
+  AttendanceRecord
 } from '../../types/cms';
+import { EventReportModal } from './EventReportModal';
 import {
   Star,
   MessageSquareQuote,
@@ -27,7 +30,8 @@ import {
   X,
   ExternalLink,
   Lock,
-  LogIn
+  LogIn,
+  FileSpreadsheet
 } from 'lucide-react';
 import { soundFx } from '../../utils/audioFx';
 
@@ -35,9 +39,11 @@ interface EventFeedbackHubProps {
   feedbacks: EventFeedback[];
   events: ClubEvent[];
   clubs: Club[];
+  venues?: Venue[];
   currentUser: UserProfile;
   selectedRole: UserRole;
   registrations?: EventRegistration[];
+  attendance?: AttendanceRecord[];
   isGuest?: boolean;
   selectedEventId?: string | null;
   onSelectEventId?: (eventId: string | null) => void;
@@ -55,6 +61,8 @@ export const EventFeedbackHub: React.FC<EventFeedbackHubProps> = ({
   feedbacks = [],
   events = [],
   clubs = [],
+  venues = [],
+  attendance = [],
   currentUser,
   selectedRole,
   registrations = [],
@@ -69,6 +77,7 @@ export const EventFeedbackHub: React.FC<EventFeedbackHubProps> = ({
   const [filterClubId, setFilterClubId] = useState<string>('All');
   const [filterRating, setFilterRating] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [reportEvent, setReportEvent] = useState<ClubEvent | null>(null);
 
   // New Feedback Form State
   const [targetEventId, setTargetEventId] = useState<string>(
@@ -590,9 +599,29 @@ export const EventFeedbackHub: React.FC<EventFeedbackHubProps> = ({
           </select>
         </div>
 
-        <span className="text-xs text-slate-400 font-mono">
-          Showing <strong className="text-white">{filteredFeedbacks.length}</strong> reviews
-        </span>
+        <div className="flex items-center gap-3">
+          {filterEventId !== 'All' && (() => {
+            const ev = events.find((e) => e.id === filterEventId);
+            if (!ev) return null;
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playClick();
+                  setReportEvent(ev);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition cursor-pointer shadow-sm"
+                title="Generate post-event audit report (PDF / Excel) for this event"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Event Report</span>
+              </button>
+            );
+          })()}
+          <span className="text-xs text-slate-400 font-mono">
+            Showing <strong className="text-white">{filteredFeedbacks.length}</strong> reviews
+          </span>
+        </div>
       </div>
 
       {/* Feedbacks Grid */}
@@ -703,6 +732,21 @@ export const EventFeedbackHub: React.FC<EventFeedbackHubProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* COMPREHENSIVE POST-EVENT REPORT MODAL */}
+      {reportEvent && (
+        <EventReportModal
+          event={reportEvent}
+          club={clubs.find((c) => c.id === reportEvent.clubId)}
+          venue={venues.find((v) => v.id === reportEvent.venueId)}
+          registrations={registrations}
+          attendance={attendance}
+          feedbacks={feedbacks}
+          currentUser={currentUser}
+          isOpen={Boolean(reportEvent)}
+          onClose={() => setReportEvent(null)}
+        />
       )}
     </div>
   );

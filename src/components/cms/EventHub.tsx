@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { ClubEvent, Club, Venue, UserProfile, UserRole, EventRegistration, AttendanceRecord, EventFeedback } from '../../types/cms';
+import { EventReportModal } from './EventReportModal';
 import {
   Calendar,
   Clock,
@@ -76,6 +77,7 @@ export const EventHub: React.FC<EventHubProps> = ({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDownloadingQr, setIsDownloadingQr] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<ClubEvent | null>(null);
+  const [selectedReportEvent, setSelectedReportEvent] = useState<ClubEvent | null>(null);
 
   // Edit / Reschedule Modal State
   const [eventToEdit, setEventToEdit] = useState<ClubEvent | null>(null);
@@ -676,21 +678,35 @@ export const EventHub: React.FC<EventHubProps> = ({
               <div className="p-4 bg-slate-950/60 border-t border-white/10 flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
                   {evt.status === 'Completed' || (evt.date && new Date(evt.date) < new Date()) ? (
-                    <div className="flex items-center justify-between gap-2 w-full">
+                    <div className="flex items-center justify-between gap-2 w-full flex-wrap">
                       <span className="text-xs font-bold text-slate-300 bg-slate-900/90 border border-white/10 px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-sm">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Event Concluded</span>
                       </span>
-                      {onOpenFeedbacks && (
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => onOpenFeedbacks(evt.id)}
-                          className="text-xs font-bold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                          onClick={() => {
+                            soundFx.playClick();
+                            setSelectedReportEvent(evt);
+                          }}
+                          className="text-xs font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                          title="Generate post-event audit report in Excel or PDF format"
                         >
-                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                          <span>{isGuest ? 'View Feedbacks' : 'Reviews & Feedback'}</span>
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Event Report</span>
                         </button>
-                      )}
+                        {onOpenFeedbacks && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenFeedbacks(evt.id)}
+                            className="text-xs font-bold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                          >
+                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                            <span>{isGuest ? 'View Feedbacks' : 'Reviews & Feedback'}</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : isGuest ? (
                     <button
@@ -910,13 +926,26 @@ export const EventHub: React.FC<EventHubProps> = ({
                     className="w-full text-xs pl-9 pr-3 py-2 rounded-xl glass-input placeholder-slate-400 focus:outline-none"
                   />
                 </div>
-                <button
-                  onClick={() => exportEventRosterCsv(activeRosterModal)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold border border-emerald-500/30 shrink-0"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export Attendance CSV</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      soundFx.playClick();
+                      setSelectedReportEvent(activeRosterModal);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/40 transition shrink-0 cursor-pointer"
+                    title="Generate comprehensive post-event audit report in Excel or PDF format"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Event Report (PDF / Excel)</span>
+                  </button>
+                  <button
+                    onClick={() => exportEventRosterCsv(activeRosterModal)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold border border-emerald-500/30 shrink-0 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export Attendance CSV</span>
+                  </button>
+                </div>
               </div>
 
               {/* Roster Table */}
@@ -1554,6 +1583,21 @@ export const EventHub: React.FC<EventHubProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* COMPREHENSIVE POST-EVENT REPORT MODAL (EXCEL & PDF) */}
+      {selectedReportEvent && (
+        <EventReportModal
+          event={selectedReportEvent}
+          club={clubs.find((c) => c.id === selectedReportEvent.clubId)}
+          venue={venues.find((v) => v.id === selectedReportEvent.venueId)}
+          registrations={registrations}
+          attendance={attendance}
+          feedbacks={feedbacks}
+          currentUser={currentUser}
+          isOpen={Boolean(selectedReportEvent)}
+          onClose={() => setSelectedReportEvent(null)}
+        />
+      )}
     </div>
   );
 };

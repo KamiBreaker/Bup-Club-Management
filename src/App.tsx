@@ -952,6 +952,8 @@ export default function App() {
                       feedbacks={feedbacks}
                       events={events}
                       clubs={clubs}
+                      venues={venues}
+                      attendance={attendance}
                       currentUser={currentUser}
                       selectedRole={selectedRole}
                       registrations={registrations}

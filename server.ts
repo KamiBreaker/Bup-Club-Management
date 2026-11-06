@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import * as XLSX from 'xlsx';
 import {
   INITIAL_USER_PROFILES,
   BUP_CLUBS,
@@ -972,6 +973,175 @@ async function startServer() {
   app.get('/api/app-state', (_req, res) => {
     const stateSnapshot = loadNormalizedAppState();
     return res.json({ state: stateSnapshot });
+  });
+
+  // -----------------------------------------------------------------
+  // POST-EVENT REPORT GENERATION API (EXCEL & JSON AUDIT)
+  // -----------------------------------------------------------------
+  app.get('/api/events/:id/report', (req, res) => {
+    try {
+      const { id } = req.params;
+      const format = req.query.format as string;
+
+      const eventRow = db.prepare('SELECT * FROM events WHERE id = ?').get(id) as any;
+      if (!eventRow) {
+        return res.status(404).json({ error: 'Event not found.' });
+      }
+
+      const clubRow = db.prepare('SELECT * FROM clubs WHERE id = ?').get(eventRow.club_id) as any;
+      const venueRow = db.prepare('SELECT * FROM venues WHERE id = ?').get(eventRow.venue_id) as any;
+      const regRows = db.prepare('SELECT * FROM event_registrations WHERE event_id = ? ORDER BY registration_date DESC').all(id) as any[];
+      const attRows = db.prepare('SELECT * FROM attendance WHERE event_id = ? ORDER BY marked_at DESC').all(id) as any[];
+      const fbRows = db.prepare('SELECT * FROM event_feedbacks WHERE event_id = ? ORDER BY created_at DESC').all(id) as any[];
+
+      const maxSeats = Number(eventRow.max_seats) || 100;
+      const registeredCount = regRows.length;
+      const attendedCount = attRows.filter((a) => a.status === 'Present').length;
+      const absentCount = Math.max(0, registeredCount - attendedCount);
+      const fillRate = maxSeats > 0 ? Math.round((registeredCount / maxSeats) * 100) : 0;
+      const turnoutRate = registeredCount > 0 ? Math.round((attendedCount / registeredCount) * 100) : 0;
+
+      const totalFeedbacks = fbRows.length;
+      const sumRatings = fbRows.reduce((acc, f) => acc + (Number(f.rating) || 0), 0);
+      const averageRating = totalFeedbacks > 0 ? Number((sumRatings / totalFeedbacks).toFixed(1)) : 0;
+      const satisfactionScore = averageRating > 0 ? Math.round((averageRating / 5) * 100) : 0;
+
+      // Department breakdown
+      const deptMap: { [key: string]: { registered: number; attended: number } } = {};
+      regRows.forEach((r) => {
+        const dept = r.department || 'Other';
+        if (!deptMap[dept]) deptMap[dept] = { registered: 0, attended: 0 };
+        deptMap[dept].registered += 1;
+        if (Boolean(r.attended)) deptMap[dept].attended += 1;
+      });
+
+      const departmentBreakdown = Object.entries(deptMap).map(([dept, data]) => ({
+        department: dept,
+        registered: data.registered,
+        attended: data.attended,
+        turnoutRate: data.registered > 0 ? Math.round((data.attended / data.registered) * 100) : 0
+      })).sort((a, b) => b.registered - a.registered);
+
+      const reportData = {
+        reportRef: `BUP-REP-${id}-${new Date().getFullYear()}`,
+        generatedAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        event: {
+          id: eventRow.id,
+          clubId: eventRow.club_id,
+          clubName: eventRow.club_name,
+          title: eventRow.title,
+          category: eventRow.category,
+          description: eventRow.description,
+          date: eventRow.date,
+          startTime: eventRow.start_time,
+          endTime: eventRow.end_time,
+          venueId: eventRow.venue_id,
+          venueName: eventRow.venue_name,
+          maxSeats,
+          status: eventRow.status,
+          requiredEquipment: JSON.parse(eventRow.required_equipment || '[]')
+        },
+        club: clubRow
+          ? {
+              id: clubRow.id,
+              code: clubRow.code,
+              name: clubRow.name,
+              category: clubRow.category,
+              department: clubRow.department,
+              facultyAdvisor: JSON.parse(clubRow.faculty_advisor || '{}'),
+              budgetAllocated: clubRow.budget_allocated
+            }
+          : undefined,
+        venue: venueRow
+          ? {
+              id: venueRow.id,
+              name: venueRow.name,
+              location: venueRow.location,
+              capacity: venueRow.capacity,
+              facilities: JSON.parse(venueRow.facilities || '[]')
+            }
+          : undefined,
+        metrics: {
+          maxSeats,
+          registeredCount,
+          attendedCount,
+          absentCount,
+          fillRate,
+          turnoutRate,
+          totalFeedbacks,
+          averageRating,
+          satisfactionScore
+        },
+        departmentBreakdown,
+        attendees: regRows.map((r, idx) => ({
+          slNo: idx + 1,
+          studentId: r.student_id,
+          studentName: r.student_name,
+          department: r.department,
+          email: r.email,
+          passCode: r.pass_code,
+          registrationDate: r.registration_date,
+          status: Boolean(r.attended) ? 'Present' : 'Absent'
+        })),
+        feedbacks: fbRows.map((f, idx) => ({
+          slNo: idx + 1,
+          studentName: f.student_name,
+          studentId: f.student_id,
+          department: f.department,
+          rating: f.rating,
+          category: f.category,
+          comment: f.comment,
+          createdAt: f.created_at
+        }))
+      };
+
+      if (format === 'excel') {
+        const wb = XLSX.utils.book_new();
+
+        // Sheet 1: Summary
+        const summaryRows = [
+          ['BANGLADESH UNIVERSITY OF PROFESSIONALS (BUP)'],
+          ['POST-EVENT COMPLIANCE, PARTICIPATION & AUDIT REPORT'],
+          ['Report Ref:', reportData.reportRef],
+          ['Generated At:', reportData.generatedAt],
+          [''],
+          ['Event ID:', reportData.event.id],
+          ['Event Title:', reportData.event.title],
+          ['Category:', reportData.event.category],
+          ['Status:', reportData.event.status],
+          ['Date & Window:', `${reportData.event.date} (${reportData.event.startTime} - ${reportData.event.endTime})`],
+          ['Venue:', `${reportData.event.venueName} (${reportData.venue?.location || 'Main Campus'})`],
+          ['Organizing Club:', reportData.club?.name || reportData.event.clubName],
+          ['Faculty Advisor:', reportData.club?.facultyAdvisor?.name || 'N/A'],
+          [''],
+          ['Allocated Seats:', reportData.metrics.maxSeats],
+          ['Total Registrations:', reportData.metrics.registeredCount],
+          ['Verified Turnout:', reportData.metrics.attendedCount],
+          ['Turnout Rate:', `${reportData.metrics.turnoutRate}%`],
+          ['Average Satisfaction Rating:', `${reportData.metrics.averageRating} / 5.0`],
+          ['Feedback Submissions:', reportData.metrics.totalFeedbacks]
+        ];
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Executive Summary');
+
+        // Sheet 2: Roster
+        const wsRoster = XLSX.utils.json_to_sheet(reportData.attendees);
+        XLSX.utils.book_append_sheet(wb, wsRoster, 'Attendance Roster');
+
+        // Sheet 3: Feedback
+        const wsFb = XLSX.utils.json_to_sheet(reportData.feedbacks);
+        XLSX.utils.book_append_sheet(wb, wsFb, 'Feedback & Ratings');
+
+        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="BUP_Report_${id}.xlsx"`);
+        return res.send(buffer);
+      }
+
+      return res.json({ report: reportData });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to generate report', details: err.message });
+    }
   });
 
   // -----------------------------------------------------------------
